@@ -1,146 +1,200 @@
-# Laravel Backend Implementation Plan - Stock Inventory Operations System
+# Laravel Backend Build Plan - SIO (Architecture First)
 
-This document outlines the technical plan to build the backend using **Laravel 10/11** and **MySQL**.
+This plan is rebuilt to execute the backend flow-by-flow with clean architecture, strict security, and clear delivery gates.
 
-## 1. Project Initialization & Environment
+## 1. Current Status (Completed)
 
-- [ ] **Initialize Laravel Project**
-  - Install via Composer: `composer create-project laravel/laravel sio_backend`
-  - Initialize Git repository.
-- [ ] **Database Setup**
-  - Create MySQL database `sio_db`.
-  - Configure `.env` file with DB credentials.
-- [ ] **API Setup**
-  - Install **Laravel Sanctum** for API authentication (Token-based auth for Admin/Staff).
-  - Configure CORS to allow frontend connections.
+- [x] Laravel project initialized.
+- [x] Local Git repository initialized.
+- [x] Remote repository connected.
+- [x] MySQL configured in environment.
+- [x] Base migrations executed successfully.
 
-## 2. Database Design (Migrations)
+## 2. Target Architecture (Clean + Practical for Laravel)
 
-We will create migrations for the entities defined in the business plan.
+Use a layered modular structure so business logic is isolated from framework details.
 
-### 2.1 User Management
+### 2.1 Layer Responsibilities
 
-- [ ] `users`: standard fields + `role` (enum: 'admin', 'staff'), `status` (active/inactive).
+- Domain Layer: Entities, value objects, domain rules, domain events, enums.
+- Application Layer: Use cases, DTOs, command/query handlers, interfaces (ports).
+- Infrastructure Layer: Eloquent repositories, external services, queue adapters, cache adapters.
+- Interface Layer: HTTP controllers, Form Requests, API Resources, route definitions.
 
-### 2.2 Master Data
+### 2.2 Dependency Rule
 
-- [ ] `products`:
-  - `type` (enum: 'device', 'accessory', 'consumable')
-  - `is_serialized` (boolean)
-  - `uom`, `price`, `reorder_level`.
-- [ ] `suppliers`: basic contact info.
-- [ ] `customers`: basic contact info.
+- Interface -> Application -> Domain.
+- Infrastructure depends on Application/Domain contracts, not the reverse.
+- Controllers never contain business rules.
+- Eloquent models are persistence objects, not business workflow engines.
 
-### 2.3 Operations - Purchasing & Inbound
+### 2.3 Suggested Module Boundaries
 
-- [ ] `purchase_orders` (PO): `po_number`, `supplier_id`, `status` (draft, issued, completed, cancelled).
-- [ ] `purchase_order_items`: `po_id`, `product_id`, `quantity`.
-- [ ] `stock_ins` (Received Goods): `delivery_order_number`, `po_id` (nullable), `supplier_id`.
-- [ ] `stock_in_items`: `stock_in_id`, `product_id`, `quantity_received`.
+- IdentityAccess
+- MasterData
+- PurchasingInbound
+- InventoryCore
+- QcOutbound
+- ExceptionsReturns
+- ReportingAudit
 
-### 2.4 Inventory Core (The "Brain")
+## 3. Security Baseline (Must Exist Before Feature Build)
 
-- [ ] `stock_items`: **Crucial Table** for tracking individual units.
-  - `product_id`
-  - `serial_number` (Factory or Internal)
-  - `status` (received, in_stock, delivered, under_repair, returned_supplier, returned_customer)
-  - `current_location` / `holder`.
-- [ ] `stock_movements`: The Ledger.
-  - `stock_item_id` (nullable for consumables)
-  - `product_id`
-  - `type` (in, out, qc, repair, return)
-  - `quantity` (positive/negative)
-  - `reference_id` (polymorphic or specific columns for related transaction).
+- Authentication: Laravel Sanctum (token-based, ability scopes).
+- Authorization: Policies + Gates + role/permission matrix.
+- Input hardening: Form Requests, strict validation rules, deny unknown fields.
+- Output hardening: API Resources to prevent overexposure of internal fields.
+- Secrets: .env only, no secret in code, rotate APP_KEY only with procedure.
+- Passwords: Argon2id/Bcrypt with strong defaults.
+- Rate limiting: login and sensitive transaction endpoints.
+- Auditability: immutable audit logs for auth and inventory status changes.
+- Database security: least-privilege MySQL user for app runtime.
+- API security headers and strict CORS allowlist.
+- Logging safety: never log passwords, tokens, or full personal data.
+- Test security gates: unauthenticated and unauthorized test cases required for every protected endpoint.
 
-### 2.5 Operations - QC & Outbound
+## 4. Build Flow (One by One, in Correct Order)
 
-- [ ] `qc_inspections`: `stock_in_item_id`, `result` (pass/fail), `inspector_id`.
-- [ ] `stock_outs`: `invoice_number`, `customer_id`, `date`.
-- [ ] `stock_out_items`: `stock_out_id`, `stock_item_id` (for serialized), `product_id`.
+Each flow must pass tests and security checks before moving to the next one.
 
-### 2.6 Exception Handling
+### Flow 0: Architecture Skeleton and Conventions
 
-- [ ] `repairs`: `stock_item_id`, `issue`, `status`.
-- [ ] `supplier_returns`: `stock_item_id`, `supplier_id`, `reason`.
-- [ ] `customer_returns`: `stock_item_id`, `customer_id`, `original_stock_out_id`.
+Objective: Lock structure before adding more features.
 
-### 2.7 System
+- Define folder/module conventions per layer.
+- Add base abstractions (UseCase interface, Repository interfaces, base DTO pattern).
+- Add global exception mapping for consistent API error format.
+- Define API response contract (success/error metadata).
+- Add coding standards (Pint/PHPStan level target) and CI checks.
 
-- [ ] `audit_logs`: `user_id`, `action`, `model`, `old_values`, `new_values`.
+Definition of Done:
 
-## 3. Core Logic Implementation (Services & Traits)
+- Architecture folders/modules are in place.
+- CI runs lint + tests.
+- Error response contract documented and tested.
 
-### 3.1 Serial Number Service
+### Flow 1: Identity and Access Control
 
-- Logic to generate internal serials `[PRODUCTCODE]-[YYYYMMDD]-[RUNNING_NO]`.
-- Validation ensures unique factory serials for Devices.
+Objective: Secure entry point for every future API.
 
-### 3.2 Inventory Movement Service
+- Install/configure Sanctum.
+- Implement login/logout/me.
+- Add role model (admin, staff) and user status guard (active/inactive).
+- Apply policies/middleware to protect all non-public routes.
+- Add rate limiting and lockout strategy for login.
 
-- A centralized service to handle all state changes.
-- Example: `InventoryService::receive($data)`, `InventoryService::passQC($itemId)`, `InventoryService::deliver($data)`.
-- Ensures that whenever a status changes, a `stock_movement` log is created automatically.
+Definition of Done:
 
-### 3.3 Role-Based Access Control (Policies)
+- Auth endpoints work with token lifecycle.
+- Unauthorized and forbidden requests are blocked and tested.
+- Role matrix for admin/staff is documented.
 
-- Create Policies for each model.
-- **Admin**: Full access (viewAny, view, create, update, delete).
-- **Staff**: Restricted access (viewAny, view, create operational records). Deny `delete` on master data.
+### Flow 2: Master Data Core (Products, Suppliers, Customers)
 
-## 4. API Endpoints (Controllers)
+Objective: Build stable reference data required by operations.
 
-### 4.1 Auth
+- Finalize entities after your upcoming data model plan.
+- Implement migrations + constraints + indexes.
+- Build use cases and repository contracts.
+- Implement CRUD APIs with policy checks.
+- Add soft delete strategy only if business requires recoverability.
 
-- `POST /login`
-- `POST /logout`
-- `GET /me`
+Definition of Done:
 
-### 4.2 Master Data (Admin CRUD, Staff Read)
+- CRUD secured by role.
+- Validation and unique constraints enforced at API and DB level.
+- Feature tests and policy tests pass.
 
-- `apiResources` for `/products`, `/suppliers`, `/customers`.
+### Flow 3: Purchasing and Stock In (Inbound)
 
-### 4.3 Transactions
+Objective: Register incoming stock with full traceability.
 
-- `POST /purchase-orders` (Draft -> Issue)
-- `POST /stock-ins` (Trigger Serial Generation here)
-- `POST /qc` (Trigger Status Change: Received -> In Stock)
-- `POST /stock-outs` (Trigger Status Change: In Stock -> Delivered)
+- Implement Purchase Order and Stock In aggregates.
+- Add serial number generation service (for serialized products).
+- Create stock item records and initial stock movements atomically.
+- Enforce transaction boundaries (DB transaction in application service).
 
-### 4.4 Exception Handling
+Definition of Done:
 
-- `POST /repairs`
-- `POST /returns/supplier`
-- `POST /returns/customer`
+- PO -> Stock In flow is functional.
+- Every inbound action creates stock movement ledger records.
+- Duplicate serial protection is guaranteed.
 
-### 4.5 Dashboard & Reports
+### Flow 4: QC and Stock Out (Outbound)
 
-- `GET /dashboard/summary`: Aggregated stats (low stock, pending QC).
-- `GET /reports/movements`: Filtered history.
+Objective: Control release of valid stock only.
 
-## 5. Development Phases
+- Implement QC pass/fail process with state transitions.
+- Restrict Stock Out to eligible states only.
+- Create movement logs for each transition.
+- Add idempotency strategy for outbound endpoint to avoid duplicate delivery records.
 
-### Phase 1: Foundation
+Definition of Done:
 
-1. Install Laravel.
-2. Setup Auth (Sanctum).
-3. Migrations for Users, Products, Suppliers, Customers.
-4. CRUD APIs for Master Data.
+- Invalid transitions are rejected.
+- Outbound flow is auditable end-to-end.
+- Concurrency tests pass for race conditions.
 
-### Phase 2: Inbound Operations
+### Flow 5: Exceptions (Repair and Returns)
 
-1. Migrations for PO, Stock In, Stock Items.
-2. Service for Serial Number Generation.
-3. API for Creating PO.
-4. API for Stock In (Receiving).
+Objective: Handle non-happy paths without breaking inventory truth.
 
-### Phase 3: QC & Outbound
+- Implement repair lifecycle.
+- Implement supplier return and customer return.
+- Maintain strict status transition map.
+- Keep movement ledger and audit logs synchronized.
 
-1. QC Logic (Status transition `Received` -> `In Stock`).
-2. Stock Out Logic (Status transition `In Stock` -> `Delivered`).
-3. Stock Movement Logging.
+Definition of Done:
 
-### Phase 4: Exceptions & Reporting
+- Exception flows preserve stock integrity.
+- Traceability remains complete for each affected stock item.
 
-1. Repair and Return modules.
-2. Dashboard Aggregations.
-3. Audit Logs (Observer pattern).
+### Flow 6: Dashboard, Reports, and Audit
+
+Objective: Expose trustworthy analytics and history.
+
+- Build dashboard summary query services.
+- Build movement reports with filtering and pagination.
+- Implement audit log browse APIs for admin.
+- Add indexes for report-heavy queries.
+
+Definition of Done:
+
+- Dashboard/report endpoints meet response-time target.
+- Audit events are complete and tamper-evident by design.
+
+## 5. Data Model Integration Gate (Pending Your Model Plan)
+
+Before final migrations for Flows 2-6:
+
+- Review your model plan and map every table to a module.
+- Confirm naming standards, foreign keys, delete behavior, and unique constraints.
+- Define enum strategy (DB enum vs lookup/reference table).
+- Freeze migration sequence once approved.
+
+## 6. Non-Functional Requirements (Always On)
+
+- Testing pyramid:
+    - Unit tests for domain rules and services.
+    - Feature tests for API endpoints and policies.
+    - Integration tests for repository and transaction boundaries.
+- Performance:
+    - Pagination by default.
+    - Prevent N+1 with eager loading policy.
+    - Add index review checklist for each migration.
+- Reliability:
+    - Use DB transactions for all multi-write use cases.
+    - Queue non-critical side effects.
+- Observability:
+    - Structured logs with correlation ID.
+    - Error monitoring integration.
+
+## 7. Immediate Next Build Step
+
+Start with Flow 0 and Flow 1 only.
+
+1. Create architecture skeleton and shared conventions.
+2. Implement Sanctum auth + role policy matrix.
+3. Add tests for auth and authorization gates.
+
+After that, we continue to Flow 2 once you provide the data model plan.
