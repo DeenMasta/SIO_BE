@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Application\Support\AuditLogger;
 use App\Application\Support\ApiResponse;
 use App\Domain\IdentityAccess\Enums\UserRole;
+use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Auth\LoginRequest;
 use App\Http\Resources\Api\UserResource;
@@ -12,6 +14,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 class AuthController extends Controller
 {
+    public function __construct(private readonly AuditLogger $auditLogger)
+    {
+    }
+
     public function login(LoginRequest $request)
     {
         $credentials = $request->validated();
@@ -28,6 +34,15 @@ class AuthController extends Controller
 
         $abilities = $user->role === UserRole::Admin ? ['admin-access', 'staff-access'] : ['staff-access'];
         $token = $user->createToken($request->input('device_name', 'api-token'), $abilities)->plainTextToken;
+
+        $this->auditLogger->log(
+            userId: (int) $user->id,
+            moduleName: 'IdentityAccess',
+            entityName: 'User',
+            entityId: (int) $user->id,
+            action: AuditAction::Login,
+            newValues: ['email' => $user->email],
+        );
 
         return ApiResponse::success([
             'token_type' => 'Bearer',

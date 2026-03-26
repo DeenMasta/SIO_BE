@@ -3,12 +3,15 @@
 namespace App\Application\PurchasingInbound\StockIn\UseCases;
 
 use App\Application\Contracts\UseCase;
+use App\Application\Support\AuditLogger;
 use App\Application\Support\SerialNumberGenerator;
+use App\Application\Support\StockBalanceService;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\SerialSource;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
 use App\Domain\MasterData\Enums\ProductType;
 use App\Domain\PurchasingInbound\Enums\StockInStatus;
+use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\StockIn;
@@ -20,7 +23,11 @@ use Illuminate\Validation\ValidationException;
 
 class PostStockInUseCase implements UseCase
 {
-    public function __construct(private readonly SerialNumberGenerator $serialNumberGenerator)
+    public function __construct(
+        private readonly SerialNumberGenerator $serialNumberGenerator,
+        private readonly AuditLogger $auditLogger,
+        private readonly StockBalanceService $stockBalances,
+    )
     {
     }
 
@@ -95,6 +102,8 @@ class PostStockInUseCase implements UseCase
                             'performed_by' => (int) $data['stock_in_pic_id'],
                             'remarks' => $line['remarks'] ?? null,
                         ]);
+
+                        $this->stockBalances->incrementStatus($product->id, StockItemStatus::Received, 1);
                     }
 
                     continue;
@@ -125,6 +134,8 @@ class PostStockInUseCase implements UseCase
                             'performed_by' => (int) $data['stock_in_pic_id'],
                             'remarks' => $line['remarks'] ?? null,
                         ]);
+
+                        $this->stockBalances->incrementStatus($product->id, StockItemStatus::Received, 1);
                     }
 
                     continue;
@@ -142,9 +153,22 @@ class PostStockInUseCase implements UseCase
                     'performed_by' => (int) $data['stock_in_pic_id'],
                     'remarks' => $line['remarks'] ?? null,
                 ]);
+
+                $this->stockBalances->incrementStatus($product->id, StockItemStatus::Received, $receivedQty);
             }
 
-            return $stockIn->fresh('lines.stockItems');
+            $result = $stockIn->fresh('lines.stockItems');
+
+            $this->auditLogger->log(
+                userId: (int) $data['stock_in_pic_id'],
+                moduleName: 'PurchasingInbound',
+                entityName: 'StockIn',
+                entityId: (int) $result->id,
+                action: AuditAction::Post,
+                newValues: ['stock_in_number' => $result->stock_in_number, 'status' => $result->status?->value],
+            );
+
+            return $result;
         });
     }
 }
