@@ -3,7 +3,10 @@
 namespace App\Http\Controllers\Api\ReportingAudit;
 
 use App\Application\ReportingAudit\AuditLogs\UseCases\ListAuditLogsUseCase;
+use App\Application\ReportingAudit\Reports\Services\ExportService;
 use App\Application\Support\ApiResponse;
+use App\Application\Support\AuditLogger;
+use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\ReportingAudit\AuditLog\AuditLogReportRequest;
 use App\Http\Resources\Api\ReportingAudit\AuditLogResource;
@@ -12,8 +15,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AuditLogController extends Controller
 {
-    public function __construct(private readonly ListAuditLogsUseCase $auditLogs)
-    {
+    public function __construct(
+        private readonly ListAuditLogsUseCase $auditLogs,
+        private readonly AuditLogger $auditLogger,
+        private readonly ExportService $exportService,
+    ) {
     }
 
     public function index(AuditLogReportRequest $request): JsonResponse
@@ -36,34 +42,55 @@ class AuditLogController extends Controller
 
     public function export(AuditLogReportRequest $request): StreamedResponse
     {
-        $rows = $this->auditLogs->exportRows($request->validated());
-        $filename = 'audit-logs-'.now()->format('Ymd_His').'.csv';
+        $validated = $request->validated();
+        $format = strtolower($validated['format'] ?? 'csv');
+        $filters = collect($validated)->except('format')->toArray();
 
-        return response()->streamDownload(function () use ($rows): void {
-            $handle = fopen('php://output', 'wb');
-            if ($handle === false) {
-                return;
-            }
+        $rows = $this->auditLogs->exportRows($filters);
+        $filename = 'audit-logs-'.now()->format('Ymd_His');
 
-            fputcsv($handle, ['id', 'created_at', 'user_id', 'module_name', 'entity_name', 'entity_id', 'action', 'old_values', 'new_values']);
+        // Log export action
+        $this->auditLogger->log(
+            userId: (int) $request->user()->id,
+            moduleName: 'ReportingAudit',
+            entityName: 'AuditLogReport',
+            entityId: 0,
+            action: AuditAction::Export,
+            newValues: ['filters' => $filters, 'filename' => $filename, 'format' => $format],
+        );
 
-            foreach ($rows as $row) {
-                fputcsv($handle, [
-                    (int) $row->id,
-                    $row->created_at?->toISOString(),
-                    $row->user_id,
-                    $row->module_name,
-                    $row->entity_name,
-                    $row->entity_id,
-                    is_object($row->action) ? $row->action->value : $row->action,
-                    json_encode(AuditLogResource::redact($row->old_values), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                    json_encode(AuditLogResource::redact($row->new_values), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                ]);
-            }
+        // Redact sensitive fields for export
+        $redactedRows = $rows->map(function ($row) {
+            return (object) [
+                'id' => $row->id,
+                'created_at' => $row->created_at,
+                'user_id' => $row->user_id,
+                'module_name' => $row->module_name,
+                'entity_name' => $row->entity_name,
+                'entity_id' => $row->entity_id,
+                'action' => $row->action,
+                'old_values' => AuditLogResource::redact($row->old_values),
+                'new_values' => AuditLogResource::redact($row->new_values),
+            ];
+        });
 
-            fclose($handle);
-        }, $filename, [
-            'Content-Type' => 'text/csv; charset=UTF-8',
-        ]);
+        $headers = [
+            'id',
+            'created_at',
+            'user_id',
+            'module_name',
+            'entity_name',
+            'entity_id',
+            'action',
+            'old_values',
+            'new_values',
+        ];
+
+        return $this->exportService->export(
+            rows: $redactedRows,
+            headers: $headers,
+            filename: $filename,
+            format: $format,
+        );
     }
 }

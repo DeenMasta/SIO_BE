@@ -14,6 +14,7 @@ class PurchaseOrderLine extends Model
         'purchase_order_id',
         'product_id',
         'ordered_qty',
+        'received_qty',
         'unit_price',
         'subtotal',
         'remarks',
@@ -23,6 +24,7 @@ class PurchaseOrderLine extends Model
     {
         return [
             'ordered_qty' => 'integer',
+            'received_qty' => 'integer',
             'unit_price' => 'decimal:2',
             'subtotal' => 'decimal:2',
         ];

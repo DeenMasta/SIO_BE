@@ -31,6 +31,11 @@ class StockInLine extends Model
         return $this->belongsTo(StockIn::class);
     }
 
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class);
+    }
+
     public function stockItems(): HasMany
     {
         return $this->hasMany(StockItem::class);

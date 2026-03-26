@@ -169,6 +169,45 @@ class QcOutboundApiTest extends TestCase
         ])->assertUnprocessable();
     }
 
+    public function test_staff_can_post_qc_and_stock_out(): void
+    {
+        $admin = User::factory()->admin()->create();
+        [, $device, $stockItemId, $stockInId, $stockInLineId] = $this->createReceivedDeviceItem($admin);
+        $staff = User::factory()->staff()->create();
+        $customer = Customer::factory()->create();
+
+        Sanctum::actingAs($staff, ['staff-access']);
+
+        $this->postJson('/api/qc-transactions', [
+            'qc_reference_number' => 'QC-STF-100001',
+            'stock_in_id' => $stockInId,
+            'qc_date' => now()->toDateString(),
+            'lines' => [
+                [
+                    'stock_in_line_id' => $stockInLineId,
+                    'product_id' => $device->id,
+                    'qc_result' => 'PASS',
+                    'stock_item_ids' => [$stockItemId],
+                ],
+            ],
+        ])->assertCreated();
+
+        $this->postJson('/api/stock-outs', [
+            'stock_out_number' => 'SOUT-STF-100001',
+            'idempotency_key' => 'idem-stf-100001',
+            'stock_out_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'invoice_number' => 'INV-STF-100001',
+            'lines' => [
+                [
+                    'product_id' => $device->id,
+                    'qty' => 1,
+                    'stock_item_ids' => [$stockItemId],
+                ],
+            ],
+        ])->assertCreated();
+    }
+
     /**
      * @return array{Supplier, Product, int, int, int}
      */

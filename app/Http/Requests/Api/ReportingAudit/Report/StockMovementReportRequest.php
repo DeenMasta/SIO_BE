@@ -25,6 +25,7 @@ class StockMovementReportRequest extends StrictFormRequest
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:200'],
+            'format' => ['nullable', Rule::in(['csv', 'xlsx', 'pdf'])],
         ];
     }
 
@@ -37,6 +38,7 @@ class StockMovementReportRequest extends StrictFormRequest
             'date_from',
             'date_to',
             'per_page',
+            'format',
         ];
     }
 }

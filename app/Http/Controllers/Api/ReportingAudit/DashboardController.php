@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\ReportingAudit;
 use App\Application\ReportingAudit\Dashboard\UseCases\GetDashboardSummaryUseCase;
 use App\Application\Support\ApiResponse;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\ReportingAudit\Dashboard\DashboardSummaryRequest;
 use Illuminate\Http\JsonResponse;
 
 class DashboardController extends Controller
@@ -13,8 +14,11 @@ class DashboardController extends Controller
     {
     }
 
-    public function index(): JsonResponse
+    public function index(DashboardSummaryRequest $request): JsonResponse
     {
-        return ApiResponse::success($this->dashboardSummary->execute(), 'Dashboard summary retrieved successfully.');
+        return ApiResponse::success(
+            $this->dashboardSummary->execute($request->validated()),
+            'Dashboard summary retrieved successfully.'
+        );
     }
 }

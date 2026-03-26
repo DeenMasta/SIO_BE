@@ -10,7 +10,10 @@ enum MovementType: string
     case StockOut = 'STOCK_OUT';
     case RepairIn = 'REPAIR_IN';
     case RepairOut = 'REPAIR_OUT';
+    case RepairCancelled = 'REPAIR_CANCELLED';
     case CustomerReturn = 'CUSTOMER_RETURN';
+    case CustomerReturnCancelled = 'CUSTOMER_RETURN_CANCELLED';
     case ReturnToSupplier = 'RETURN_TO_SUPPLIER';
+    case ReturnToSupplierCancelled = 'RETURN_TO_SUPPLIER_CANCELLED';
     case Adjustment = 'ADJUSTMENT';
 }

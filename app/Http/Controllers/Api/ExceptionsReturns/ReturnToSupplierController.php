@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api\ExceptionsReturns;
 
 use App\Application\Contracts\Repositories\ReturnToSupplierRepository;
+use App\Application\ExceptionsReturns\ReturnToSuppliers\UseCases\CancelReturnToSupplierUseCase;
 use App\Application\ExceptionsReturns\ReturnToSuppliers\UseCases\CreateReturnToSupplierUseCase;
 use App\Application\ExceptionsReturns\ReturnToSuppliers\UseCases\ListReturnToSuppliersUseCase;
 use App\Application\Support\ApiResponse;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\ExceptionsReturns\CancelExceptionTransactionRequest;
 use App\Http\Requests\Api\ExceptionsReturns\ReturnToSupplier\StoreReturnToSupplierRequest;
 use App\Http\Resources\Api\ExceptionsReturns\ReturnToSupplierResource;
 use App\Models\ReturnToSupplier;
@@ -18,6 +20,7 @@ class ReturnToSupplierController extends Controller
     public function __construct(
         private readonly ListReturnToSuppliersUseCase $listReturns,
         private readonly CreateReturnToSupplierUseCase $createReturn,
+        private readonly CancelReturnToSupplierUseCase $cancelReturn,
         private readonly ReturnToSupplierRepository $returns,
     ) {
     }
@@ -62,5 +65,19 @@ class ReturnToSupplierController extends Controller
         $this->authorize('view', $record);
 
         return ApiResponse::success(new ReturnToSupplierResource($record), 'Return to supplier retrieved successfully.');
+    }
+
+    public function cancel(CancelExceptionTransactionRequest $request, int $id): JsonResponse
+    {
+        $record = $this->returns->findOrFail($id);
+        $this->authorize('create', ReturnToSupplier::class);
+
+        $cancelled = $this->cancelReturn->execute([
+            'return_to_supplier_id' => $id,
+            'remarks' => $request->validated('remarks'),
+            'cancelled_by' => (int) $request->user()->id,
+        ]);
+
+        return ApiResponse::success(new ReturnToSupplierResource($cancelled), 'Return to supplier cancelled successfully.');
     }
 }

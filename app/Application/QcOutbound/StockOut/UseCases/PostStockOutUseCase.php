@@ -138,6 +138,18 @@ class PostStockOutUseCase implements UseCase
                     continue;
                 }
 
+                $stockBalance = DB::table('stock_balances')
+                    ->where('product_id', $product->id)
+                    ->lockForUpdate()
+                    ->first();
+
+                $availableQty = (int) ($stockBalance->qty_in_stock ?? 0);
+                if ($availableQty < $qty) {
+                    throw ValidationException::withMessages([
+                        'lines' => [sprintf('Insufficient stock for product %s. Available: %d, requested: %d.', $product->product_code, $availableQty, $qty)],
+                    ]);
+                }
+
                 StockMovement::query()->create([
                     'movement_datetime' => now(),
                     'product_id' => $product->id,

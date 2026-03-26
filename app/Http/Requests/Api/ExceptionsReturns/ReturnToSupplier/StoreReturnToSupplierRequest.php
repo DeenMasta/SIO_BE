@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Api\ExceptionsReturns\ReturnToSupplier;
 
+use App\Domain\ExceptionsReturns\Enums\ExceptionReason;
 use App\Http\Requests\Api\StrictFormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreReturnToSupplierRequest extends StrictFormRequest
 {
@@ -26,7 +28,7 @@ class StoreReturnToSupplierRequest extends StrictFormRequest
             'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'lines.*.stock_item_id' => ['nullable', 'integer', 'exists:stock_items,id'],
             'lines.*.qty' => ['required', 'integer', 'min:1'],
-            'lines.*.reason_for_return' => ['required', 'string', 'max:255'],
+            'lines.*.reason_for_return' => ['required', 'string', Rule::in(ExceptionReason::values())],
             'lines.*.remarks' => ['nullable', 'string', 'max:2000'],
         ];
     }

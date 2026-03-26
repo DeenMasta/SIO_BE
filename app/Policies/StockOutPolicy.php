@@ -29,6 +29,6 @@ class StockOutPolicy
 
     public function create(User $user): bool
     {
-        return false;
+        return $user->isStaff() && $user->isActive();
     }
 }

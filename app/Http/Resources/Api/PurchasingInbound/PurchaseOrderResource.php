@@ -25,6 +25,7 @@ class PurchaseOrderResource extends JsonResource
                 'id' => $line->id,
                 'product_id' => $line->product_id,
                 'ordered_qty' => $line->ordered_qty,
+                'received_qty' => $line->received_qty,
                 'unit_price' => (string) $line->unit_price,
                 'subtotal' => (string) $line->subtotal,
                 'remarks' => $line->remarks,

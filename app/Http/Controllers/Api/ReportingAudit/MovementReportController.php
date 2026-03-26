@@ -2,17 +2,24 @@
 
 namespace App\Http\Controllers\Api\ReportingAudit;
 
+use App\Application\ReportingAudit\Reports\Services\ExportService;
 use App\Application\ReportingAudit\Reports\UseCases\ListStockMovementReportUseCase;
 use App\Application\Support\ApiResponse;
+use App\Application\Support\AuditLogger;
+use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\ReportingAudit\Report\StockMovementReportRequest;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Collection;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MovementReportController extends Controller
 {
-    public function __construct(private readonly ListStockMovementReportUseCase $movementReport)
-    {
+    public function __construct(
+        private readonly ListStockMovementReportUseCase $movementReport,
+        private readonly AuditLogger $auditLogger,
+        private readonly ExportService $exportService,
+    ) {
     }
 
     public function index(StockMovementReportRequest $request): JsonResponse
@@ -35,38 +42,44 @@ class MovementReportController extends Controller
 
     public function export(StockMovementReportRequest $request): StreamedResponse
     {
-        $rows = $this->movementReport->exportRows($request->validated());
-        $filename = 'stock-movements-'.now()->format('Ymd_His').'.csv';
+        $validated = $request->validated();
+        $format = strtolower($validated['format'] ?? 'csv');
+        $filters = collect($validated)->except('format')->toArray();
 
-        return response()->streamDownload(function () use ($rows): void {
-            $handle = fopen('php://output', 'wb');
-            if ($handle === false) {
-                return;
-            }
+        $rows = $this->movementReport->exportRows($filters);
+        $filename = 'stock-movements-'.now()->format('Ymd_His');
 
-            fputcsv($handle, ['id', 'movement_datetime', 'product_id', 'stock_item_id', 'movement_type', 'reference_table', 'reference_id', 'qty_in', 'qty_out', 'from_status', 'to_status', 'performed_by', 'remarks']);
+        // Log export action
+        $this->auditLogger->log(
+            userId: (int) $request->user()->id,
+            moduleName: 'ReportingAudit',
+            entityName: 'StockMovementReport',
+            entityId: 0,
+            action: AuditAction::Export,
+            newValues: ['filters' => $filters, 'filename' => $filename, 'format' => $format],
+        );
 
-            foreach ($rows as $row) {
-                fputcsv($handle, [
-                    (int) $row->id,
-                    $row->movement_datetime?->toISOString(),
-                    (int) $row->product_id,
-                    $row->stock_item_id,
-                    is_object($row->movement_type) ? $row->movement_type->value : $row->movement_type,
-                    $row->reference_table,
-                    (int) $row->reference_id,
-                    (int) $row->qty_in,
-                    (int) $row->qty_out,
-                    $row->from_status,
-                    $row->to_status,
-                    (int) $row->performed_by,
-                    $row->remarks,
-                ]);
-            }
+        $headers = [
+            'id',
+            'movement_datetime',
+            'product_id',
+            'stock_item_id',
+            'movement_type',
+            'reference_table',
+            'reference_id',
+            'qty_in',
+            'qty_out',
+            'from_status',
+            'to_status',
+            'performed_by',
+            'remarks',
+        ];
 
-            fclose($handle);
-        }, $filename, [
-            'Content-Type' => 'text/csv; charset=UTF-8',
-        ]);
+        return $this->exportService->export(
+            rows: $rows,
+            headers: $headers,
+            filename: $filename,
+            format: $format,
+        );
     }
 }

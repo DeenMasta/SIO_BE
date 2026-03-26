@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Auth\LoginRequest;
 use App\Http\Resources\Api\UserResource;
 use Illuminate\Support\Facades\Auth;
+use Laravel\Sanctum\PersonalAccessToken;
 use Symfony\Component\HttpFoundation\Response;
 
 class AuthController extends Controller
@@ -54,10 +55,12 @@ class AuthController extends Controller
     public function logout()
     {
         $user = request()->user();
-        $token = $user?->currentAccessToken();
 
-        if ($user && $token) {
-            $user->tokens()->whereKey($token->id)->delete();
+        if ($user) {
+            $currentToken = $user->currentAccessToken();
+            if ($currentToken instanceof PersonalAccessToken) {
+                $currentToken->delete();
+            }
         }
 
         return ApiResponse::success(null, 'Logout successful.');

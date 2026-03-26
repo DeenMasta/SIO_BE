@@ -7,14 +7,15 @@ use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\StockBalanceService;
 use App\Domain\ExceptionsReturns\Enums\RepairStatus;
+use App\Domain\ExceptionsReturns\Services\RepairStateMachine;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
 use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Models\Repair;
+use App\Models\RepairStatusHistory;
 use App\Models\StockItem;
 use App\Models\StockMovement;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 
 class UpdateRepairStatusUseCase implements UseCase
 {
@@ -34,47 +35,32 @@ class UpdateRepairStatusUseCase implements UseCase
         $status = RepairStatus::from((string) $data['repair_status']);
 
         return DB::transaction(function () use ($repair, $status, $data): Repair {
-            $allowed = match ($repair->repair_status) {
-                RepairStatus::Open => [RepairStatus::InProgress, RepairStatus::Cancelled, RepairStatus::Completed],
-                RepairStatus::InProgress => [RepairStatus::Completed, RepairStatus::Cancelled],
-                default => [],
-            };
+            // Validate transition using state machine
+            RepairStateMachine::validateTransition($repair->repair_status, $status);
 
-            if (! in_array($status, $allowed, true)) {
-                throw ValidationException::withMessages([
-                    'repair_status' => ['Invalid repair status transition.'],
-                ]);
-            }
+            // Save the old status before updating
+            $oldStatus = $repair->repair_status;
 
             $updated = $this->repairs->update($repair, [
                 'repair_status' => $status,
                 'remarks' => $data['remarks'] ?? $repair->remarks,
             ]);
 
+            // Log status history
+            RepairStatusHistory::query()->create([
+                'repair_id' => $repair->id,
+                'from_status' => $oldStatus?->value,
+                'to_status' => $status->value,
+                'remarks' => $data['remarks'] ?? null,
+                'changed_by' => (int) $data['updated_by'],
+                'changed_at' => now(),
+            ]);
+
+            // Handle side effects based on new status
             if ($status === RepairStatus::Completed) {
-                $stockItem = StockItem::query()->lockForUpdate()->findOrFail((int) $repair->stock_item_id);
-                $stockItem->update([
-                    'current_status' => StockItemStatus::InStock,
-                    'is_available' => true,
-                    'last_movement_at' => now(),
-                ]);
-
-                StockMovement::query()->create([
-                    'movement_datetime' => now(),
-                    'product_id' => $stockItem->product_id,
-                    'stock_item_id' => $stockItem->id,
-                    'movement_type' => MovementType::RepairOut,
-                    'reference_table' => 'repairs',
-                    'reference_id' => $repair->id,
-                    'qty_in' => 1,
-                    'qty_out' => 0,
-                    'from_status' => StockItemStatus::UnderRepair->value,
-                    'to_status' => StockItemStatus::InStock->value,
-                    'performed_by' => (int) $data['updated_by'],
-                    'remarks' => $data['remarks'] ?? null,
-                ]);
-
-                $this->stockBalances->transferStatus($stockItem->product_id, StockItemStatus::UnderRepair, StockItemStatus::InStock, 1);
+                $this->handleCompletion($repair, $data);
+            } elseif ($status === RepairStatus::Cancelled) {
+                $this->handleCancellation($repair, $data);
             }
 
             $this->auditLogger->log(
@@ -83,11 +69,71 @@ class UpdateRepairStatusUseCase implements UseCase
                 entityName: 'Repair',
                 entityId: (int) $updated->id,
                 action: AuditAction::Update,
-                oldValues: ['repair_status' => $repair->repair_status?->value],
+                oldValues: ['repair_status' => $oldStatus?->value],
                 newValues: ['repair_status' => $updated->repair_status?->value],
             );
 
             return $updated;
         });
+    }
+
+    /**
+     * Handle repair completion: Move item back to IN_STOCK status.
+     */
+    private function handleCompletion(Repair $repair, array $data): void
+    {
+        $stockItem = StockItem::query()->lockForUpdate()->findOrFail((int) $repair->stock_item_id);
+        $stockItem->update([
+            'current_status' => StockItemStatus::InStock,
+            'is_available' => true,
+            'last_movement_at' => now(),
+        ]);
+
+        StockMovement::query()->create([
+            'movement_datetime' => now(),
+            'product_id' => $stockItem->product_id,
+            'stock_item_id' => $stockItem->id,
+            'movement_type' => MovementType::RepairOut,
+            'reference_table' => 'repairs',
+            'reference_id' => $repair->id,
+            'qty_in' => 1,
+            'qty_out' => 0,
+            'from_status' => StockItemStatus::UnderRepair->value,
+            'to_status' => StockItemStatus::InStock->value,
+            'performed_by' => (int) $data['updated_by'],
+            'remarks' => $data['remarks'] ?? null,
+        ]);
+
+        $this->stockBalances->transferStatus($stockItem->product_id, StockItemStatus::UnderRepair, StockItemStatus::InStock, 1);
+    }
+
+    /**
+     * Handle repair cancellation: Move item back to IN_STOCK status (unrepairable).
+     */
+    private function handleCancellation(Repair $repair, array $data): void
+    {
+        $stockItem = StockItem::query()->lockForUpdate()->findOrFail((int) $repair->stock_item_id);
+        $stockItem->update([
+            'current_status' => StockItemStatus::InStock,
+            'is_available' => false, // Mark as unavailable (unrepairable)
+            'last_movement_at' => now(),
+        ]);
+
+        StockMovement::query()->create([
+            'movement_datetime' => now(),
+            'product_id' => $stockItem->product_id,
+            'stock_item_id' => $stockItem->id,
+            'movement_type' => MovementType::RepairCancelled,
+            'reference_table' => 'repairs',
+            'reference_id' => $repair->id,
+            'qty_in' => 0,
+            'qty_out' => 0,
+            'from_status' => StockItemStatus::UnderRepair->value,
+            'to_status' => StockItemStatus::InStock->value,
+            'performed_by' => (int) $data['updated_by'],
+            'remarks' => $data['remarks'] ?? 'Repair cancelled',
+        ]);
+
+        $this->stockBalances->transferStatus($stockItem->product_id, StockItemStatus::UnderRepair, StockItemStatus::InStock, 1);
     }
 }

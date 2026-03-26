@@ -27,6 +27,7 @@ class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
 
         foreach ($lines as $line) {
             $line['subtotal'] = (float) $line['ordered_qty'] * (float) $line['unit_price'];
+            $line['received_qty'] = 0;
             $purchaseOrder->lines()->create($line);
         }
 

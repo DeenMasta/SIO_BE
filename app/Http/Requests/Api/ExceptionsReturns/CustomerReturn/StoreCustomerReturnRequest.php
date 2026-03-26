@@ -2,7 +2,10 @@
 
 namespace App\Http\Requests\Api\ExceptionsReturns\CustomerReturn;
 
+use App\Domain\ExceptionsReturns\Enums\CustomerReturnNextAction;
+use App\Domain\ExceptionsReturns\Enums\ExceptionReason;
 use App\Http\Requests\Api\StrictFormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreCustomerReturnRequest extends StrictFormRequest
 {
@@ -28,9 +31,9 @@ class StoreCustomerReturnRequest extends StrictFormRequest
             'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'lines.*.stock_item_id' => ['nullable', 'integer', 'exists:stock_items,id'],
             'lines.*.qty' => ['required', 'integer', 'min:1'],
-            'lines.*.reason_for_return' => ['required', 'string', 'max:255'],
+            'lines.*.reason_for_return' => ['required', 'string', Rule::in(ExceptionReason::values())],
             'lines.*.condition_on_return' => ['nullable', 'string', 'max:255'],
-            'lines.*.next_action' => ['nullable', 'string', 'max:50'],
+            'lines.*.next_action' => ['required', 'string', Rule::in(CustomerReturnNextAction::values())],
             'lines.*.remarks' => ['nullable', 'string', 'max:2000'],
         ];
     }

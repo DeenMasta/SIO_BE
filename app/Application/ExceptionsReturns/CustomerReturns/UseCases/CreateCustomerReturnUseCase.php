@@ -6,6 +6,7 @@ use App\Application\Contracts\Repositories\CustomerReturnRepository;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\StockBalanceService;
+use App\Domain\ExceptionsReturns\Enums\CustomerReturnNextAction;
 use App\Domain\ExceptionsReturns\Enums\ExceptionTransactionStatus;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
@@ -52,6 +53,9 @@ class CreateCustomerReturnUseCase implements UseCase
 
             foreach ($data['lines'] as $line) {
                 $stockItemId = $line['stock_item_id'] ?? null;
+                $nextAction = CustomerReturnNextAction::from((string) $line['next_action']);
+                $targetStatus = $this->targetStatusForNextAction($nextAction);
+                $targetAvailability = $nextAction === CustomerReturnNextAction::Restock;
 
                 $lineModel = $return->lines()->create([
                     'original_stock_out_line_id' => $line['original_stock_out_line_id'] ?? null,
@@ -73,8 +77,8 @@ class CreateCustomerReturnUseCase implements UseCase
                     }
 
                     $stockItem->update([
-                        'current_status' => StockItemStatus::Returned,
-                        'is_available' => false,
+                        'current_status' => $targetStatus,
+                        'is_available' => $targetAvailability,
                         'last_movement_at' => now(),
                     ]);
 
@@ -88,12 +92,12 @@ class CreateCustomerReturnUseCase implements UseCase
                         'qty_in' => 1,
                         'qty_out' => 0,
                         'from_status' => StockItemStatus::Delivered->value,
-                        'to_status' => StockItemStatus::Returned->value,
+                        'to_status' => $targetStatus->value,
                         'performed_by' => (int) $data['created_by'],
                         'remarks' => $line['remarks'] ?? null,
                     ]);
 
-                    $this->stockBalances->transferStatus($stockItem->product_id, StockItemStatus::Delivered, StockItemStatus::Returned, 1);
+                    $this->stockBalances->transferStatus($stockItem->product_id, StockItemStatus::Delivered, $targetStatus, 1);
 
                     continue;
                 }
@@ -107,11 +111,13 @@ class CreateCustomerReturnUseCase implements UseCase
                     'reference_id' => $lineModel->id,
                     'qty_in' => (int) $line['qty'],
                     'qty_out' => 0,
+                    'from_status' => StockItemStatus::Delivered->value,
+                    'to_status' => $targetStatus->value,
                     'performed_by' => (int) $data['created_by'],
                     'remarks' => $line['remarks'] ?? null,
                 ]);
 
-                $this->stockBalances->transferStatus((int) $line['product_id'], StockItemStatus::Delivered, StockItemStatus::Returned, (int) $line['qty']);
+                $this->stockBalances->transferStatus((int) $line['product_id'], StockItemStatus::Delivered, $targetStatus, (int) $line['qty']);
             }
 
             $result = $return->fresh('lines');
@@ -127,5 +133,15 @@ class CreateCustomerReturnUseCase implements UseCase
 
             return $result;
         });
+    }
+
+    private function targetStatusForNextAction(CustomerReturnNextAction $nextAction): StockItemStatus
+    {
+        return match ($nextAction) {
+            CustomerReturnNextAction::Restock => StockItemStatus::InStock,
+            CustomerReturnNextAction::Repair => StockItemStatus::UnderRepair,
+            CustomerReturnNextAction::Replace => StockItemStatus::Returned,
+            CustomerReturnNextAction::Scrap => StockItemStatus::ReturnedToSupplier,
+        };
     }
 }

@@ -29,11 +29,11 @@ class RepairPolicy
 
     public function create(User $user): bool
     {
-        return false;
+        return $user->isStaff() && $user->isActive();
     }
 
     public function update(User $user, Repair $repair): bool
     {
-        return false;
+        return $user->isStaff() && $user->isActive();
     }
 }

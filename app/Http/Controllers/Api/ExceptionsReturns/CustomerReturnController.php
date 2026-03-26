@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api\ExceptionsReturns;
 
 use App\Application\Contracts\Repositories\CustomerReturnRepository;
+use App\Application\ExceptionsReturns\CustomerReturns\UseCases\CancelCustomerReturnUseCase;
 use App\Application\ExceptionsReturns\CustomerReturns\UseCases\CreateCustomerReturnUseCase;
 use App\Application\ExceptionsReturns\CustomerReturns\UseCases\ListCustomerReturnsUseCase;
 use App\Application\Support\ApiResponse;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\ExceptionsReturns\CancelExceptionTransactionRequest;
 use App\Http\Requests\Api\ExceptionsReturns\CustomerReturn\StoreCustomerReturnRequest;
 use App\Http\Resources\Api\ExceptionsReturns\CustomerReturnResource;
 use App\Models\CustomerReturn;
@@ -18,6 +20,7 @@ class CustomerReturnController extends Controller
     public function __construct(
         private readonly ListCustomerReturnsUseCase $listReturns,
         private readonly CreateCustomerReturnUseCase $createReturn,
+        private readonly CancelCustomerReturnUseCase $cancelReturn,
         private readonly CustomerReturnRepository $returns,
     ) {
     }
@@ -62,5 +65,19 @@ class CustomerReturnController extends Controller
         $this->authorize('view', $record);
 
         return ApiResponse::success(new CustomerReturnResource($record), 'Customer return retrieved successfully.');
+    }
+
+    public function cancel(CancelExceptionTransactionRequest $request, int $id): JsonResponse
+    {
+        $record = $this->returns->findOrFail($id);
+        $this->authorize('create', CustomerReturn::class);
+
+        $cancelled = $this->cancelReturn->execute([
+            'customer_return_id' => $id,
+            'remarks' => $request->validated('remarks'),
+            'cancelled_by' => (int) $request->user()->id,
+        ]);
+
+        return ApiResponse::success(new CustomerReturnResource($cancelled), 'Customer return cancelled successfully.');
     }
 }

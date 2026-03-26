@@ -63,7 +63,7 @@ class ExceptionsReturnsApiTest extends TestCase
                     'product_id' => $productId,
                     'stock_item_id' => $receivedItemId,
                     'qty' => 1,
-                    'reason_for_return' => 'Physical defect',
+                    'reason_for_return' => 'PHYSICAL_DAMAGE',
                 ],
             ],
         ])->assertCreated();
@@ -93,8 +93,9 @@ class ExceptionsReturnsApiTest extends TestCase
                     'product_id' => $productId,
                     'stock_item_id' => $stockItemId,
                     'qty' => 1,
-                    'reason_for_return' => 'Client complaint',
+                    'reason_for_return' => 'WARRANTY_CLAIM',
                     'condition_on_return' => 'Damaged',
+                    'next_action' => 'REPLACE',
                 ],
             ],
         ])->assertCreated();
@@ -113,25 +114,61 @@ class ExceptionsReturnsApiTest extends TestCase
         $this->assertTrue(StockMovement::query()->count() > 0);
     }
 
-    public function test_staff_cannot_create_repair(): void
+    public function test_staff_can_create_repair_rts_and_customer_return(): void
     {
         $staff = User::factory()->staff()->create();
-        [$stockItemId] = $this->createDeliveredDevice(User::factory()->admin()->create());
+        $admin = User::factory()->admin()->create();
+        [$repairStockItemId] = $this->createDeliveredDevice($admin);
+        [$returnStockItemId, $deliveredProductId, $customerId, $stockOutId, $stockOutLineId] = $this->createDeliveredDevice($admin);
+        [$receivedItemId, $receivedProductId, $supplierId] = $this->createReceivedDevice($admin);
 
         Sanctum::actingAs($staff, ['staff-access']);
 
         $this->postJson('/api/repairs', [
             'repair_transaction_number' => 'RPR-100002',
             'repair_date' => now()->toDateString(),
-            'stock_item_id' => $stockItemId,
+            'stock_item_id' => $repairStockItemId,
             'issue_description' => 'Broken port',
-        ])->assertForbidden();
+        ])->assertCreated();
+
+        $this->postJson('/api/return-to-suppliers', [
+            'rts_transaction_number' => 'RTS-100002',
+            'supplier_id' => $supplierId,
+            'return_date' => now()->toDateString(),
+            'lines' => [
+                [
+                    'product_id' => $receivedProductId,
+                    'stock_item_id' => $receivedItemId,
+                    'qty' => 1,
+                    'reason_for_return' => 'FUNCTIONAL_ISSUE',
+                ],
+            ],
+        ])->assertCreated();
+
+        $this->postJson('/api/customer-returns', [
+            'return_transaction_number' => 'CRT-100002',
+            'return_date' => now()->toDateString(),
+            'customer_id' => $customerId,
+            'original_invoice_number' => 'INV-CR-100001',
+            'original_stock_out_id' => $stockOutId,
+            'lines' => [
+                [
+                    'original_stock_out_line_id' => $stockOutLineId,
+                    'product_id' => $deliveredProductId,
+                    'stock_item_id' => $returnStockItemId,
+                    'qty' => 1,
+                    'reason_for_return' => 'WARRANTY_CLAIM',
+                    'condition_on_return' => 'Damaged',
+                    'next_action' => 'REPAIR',
+                ],
+            ],
+        ])->assertCreated();
     }
 
     /**
      * @return array{int, int, int}
      */
-    private function createReceivedDevice(User $admin): array
+    protected function createReceivedDevice(User $admin): array
     {
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -162,14 +199,14 @@ class ExceptionsReturnsApiTest extends TestCase
     /**
      * @return array{int, int, int, int, int}
      */
-    private function createDeliveredDevice(User $admin): array
+    protected function createDeliveredDevice(User $admin): array
     {
         Sanctum::actingAs($admin, ['admin-access']);
 
         $supplier = Supplier::factory()->create();
         $customer = Customer::factory()->create();
         $product = Product::factory()->create([
-            'product_code' => 'DEV-RET-1001',
+            'product_code' => 'DEV-RET-'.fake()->numerify('######'),
             'product_type' => 'DEVICE',
         ]);
 

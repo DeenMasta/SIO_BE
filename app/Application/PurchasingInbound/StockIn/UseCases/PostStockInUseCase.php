@@ -10,10 +10,12 @@ use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\SerialSource;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
 use App\Domain\MasterData\Enums\ProductType;
+use App\Domain\PurchasingInbound\Enums\PurchaseOrderStatus;
 use App\Domain\PurchasingInbound\Enums\StockInStatus;
 use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderLine;
 use App\Models\StockIn;
 use App\Models\StockItem;
 use App\Models\StockMovement;
@@ -37,13 +39,23 @@ class PostStockInUseCase implements UseCase
 
         return DB::transaction(function () use ($data): StockIn {
             $purchaseOrderId = $data['purchase_order_id'] ?? null;
+            $purchaseOrder = null;
+
             if ($purchaseOrderId !== null) {
-                $purchaseOrder = PurchaseOrder::query()->findOrFail((int) $purchaseOrderId);
+                $purchaseOrder = PurchaseOrder::query()->with('lines')->findOrFail((int) $purchaseOrderId);
                 if ((int) $purchaseOrder->supplier_id !== (int) $data['supplier_id']) {
                     throw ValidationException::withMessages([
                         'purchase_order_id' => ['Purchase order supplier does not match selected supplier.'],
                     ]);
                 }
+
+                if (in_array($purchaseOrder->status, [PurchaseOrderStatus::Cancelled, PurchaseOrderStatus::Completed], true)) {
+                    throw ValidationException::withMessages([
+                        'purchase_order_id' => ['Stock in cannot be posted to a cancelled or completed purchase order.'],
+                    ]);
+                }
+
+                $this->validatePurchaseOrderReceiving($purchaseOrder, $data['lines']);
             }
 
             $stockIn = StockIn::query()->create([
@@ -68,6 +80,10 @@ class PostStockInUseCase implements UseCase
                     'condition_at_receiving' => $line['condition_at_receiving'] ?? null,
                     'remarks' => $line['remarks'] ?? null,
                 ]);
+
+                if ($purchaseOrder !== null) {
+                    $this->applyReceiptToPurchaseOrderLine($purchaseOrder, $product->id, $receivedQty);
+                }
 
                 $serials = array_values(array_map('strval', Arr::wrap($line['serial_numbers'] ?? [])));
 
@@ -155,6 +171,12 @@ class PostStockInUseCase implements UseCase
                 ]);
 
                 $this->stockBalances->incrementStatus($product->id, StockItemStatus::Received, $receivedQty);
+
+            }
+
+            if ($purchaseOrder !== null && $this->isPurchaseOrderFulfilled($purchaseOrder)) {
+                $purchaseOrder->status = PurchaseOrderStatus::Completed;
+                $purchaseOrder->save();
             }
 
             $result = $stockIn->fresh('lines.stockItems');
@@ -169,6 +191,67 @@ class PostStockInUseCase implements UseCase
             );
 
             return $result;
+        });
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $stockInLines
+     */
+    private function validatePurchaseOrderReceiving(PurchaseOrder $purchaseOrder, array $stockInLines): void
+    {
+        $incomingByProduct = [];
+
+        foreach ($stockInLines as $line) {
+            $productId = (int) $line['product_id'];
+            $incomingByProduct[$productId] = ($incomingByProduct[$productId] ?? 0) + (int) $line['received_qty'];
+        }
+
+        foreach ($incomingByProduct as $productId => $incomingQty) {
+            $matchingLines = $purchaseOrder->lines->where('product_id', $productId);
+
+            if ($matchingLines->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'lines' => [sprintf('Product %d is not present in the selected purchase order.', $productId)],
+                ]);
+            }
+
+            $orderedQty = (int) $matchingLines->sum('ordered_qty');
+            $receivedQty = (int) $matchingLines->sum('received_qty');
+
+            if ($receivedQty + $incomingQty > $orderedQty) {
+                throw ValidationException::withMessages([
+                    'lines' => [sprintf('Received quantity for product %d exceeds ordered quantity.', $productId)],
+                ]);
+            }
+        }
+    }
+
+    private function applyReceiptToPurchaseOrderLine(PurchaseOrder $purchaseOrder, int $productId, int $incomingQty): void
+    {
+        $remaining = $incomingQty;
+
+        /** @var PurchaseOrderLine $line */
+        foreach ($purchaseOrder->lines->where('product_id', $productId)->sortBy('id') as $line) {
+            $lineRemaining = (int) $line->ordered_qty - (int) $line->received_qty;
+            if ($lineRemaining <= 0) {
+                continue;
+            }
+
+            $toApply = min($remaining, $lineRemaining);
+            $line->received_qty = (int) $line->received_qty + $toApply;
+            $line->save();
+
+            $remaining -= $toApply;
+            if ($remaining === 0) {
+                break;
+            }
+        }
+    }
+
+    private function isPurchaseOrderFulfilled(PurchaseOrder $purchaseOrder): bool
+    {
+        return $purchaseOrder->lines->every(function (PurchaseOrderLine $line): bool {
+            return (int) $line->received_qty >= (int) $line->ordered_qty;
         });
     }
 }
