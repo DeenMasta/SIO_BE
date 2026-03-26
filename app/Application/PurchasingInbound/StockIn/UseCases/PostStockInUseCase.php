@@ -1,0 +1,150 @@
+<?php
+
+namespace App\Application\PurchasingInbound\StockIn\UseCases;
+
+use App\Application\Contracts\UseCase;
+use App\Application\Support\SerialNumberGenerator;
+use App\Domain\InventoryCore\Enums\MovementType;
+use App\Domain\InventoryCore\Enums\SerialSource;
+use App\Domain\InventoryCore\Enums\StockItemStatus;
+use App\Domain\MasterData\Enums\ProductType;
+use App\Domain\PurchasingInbound\Enums\StockInStatus;
+use App\Models\Product;
+use App\Models\PurchaseOrder;
+use App\Models\StockIn;
+use App\Models\StockItem;
+use App\Models\StockMovement;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+
+class PostStockInUseCase implements UseCase
+{
+    public function __construct(private readonly SerialNumberGenerator $serialNumberGenerator)
+    {
+    }
+
+    public function execute(mixed $payload = null): StockIn
+    {
+        $data = (array) $payload;
+
+        return DB::transaction(function () use ($data): StockIn {
+            $purchaseOrderId = $data['purchase_order_id'] ?? null;
+            if ($purchaseOrderId !== null) {
+                $purchaseOrder = PurchaseOrder::query()->findOrFail((int) $purchaseOrderId);
+                if ((int) $purchaseOrder->supplier_id !== (int) $data['supplier_id']) {
+                    throw ValidationException::withMessages([
+                        'purchase_order_id' => ['Purchase order supplier does not match selected supplier.'],
+                    ]);
+                }
+            }
+
+            $stockIn = StockIn::query()->create([
+                'stock_in_number' => $data['stock_in_number'],
+                'stock_in_date' => $data['stock_in_date'],
+                'delivery_order_number' => $data['delivery_order_number'] ?? null,
+                'purchase_order_id' => $purchaseOrderId,
+                'supplier_id' => $data['supplier_id'],
+                'stock_in_pic_id' => $data['stock_in_pic_id'],
+                'qc_person_id' => $data['qc_person_id'] ?? null,
+                'status' => StockInStatus::Posted,
+                'remarks' => $data['remarks'] ?? null,
+            ]);
+
+            foreach ($data['lines'] as $line) {
+                $product = Product::query()->findOrFail((int) $line['product_id']);
+                $receivedQty = (int) $line['received_qty'];
+
+                $stockInLine = $stockIn->lines()->create([
+                    'product_id' => $product->id,
+                    'received_qty' => $receivedQty,
+                    'condition_at_receiving' => $line['condition_at_receiving'] ?? null,
+                    'remarks' => $line['remarks'] ?? null,
+                ]);
+
+                $serials = array_values(array_map('strval', Arr::wrap($line['serial_numbers'] ?? [])));
+
+                if ($product->product_type === ProductType::Device) {
+                    if (count($serials) !== $receivedQty) {
+                        throw ValidationException::withMessages([
+                            'lines' => ['DEVICE items require serial_numbers count to match received_qty.'],
+                        ]);
+                    }
+
+                    foreach ($serials as $serial) {
+                        $stockItem = StockItem::query()->create([
+                            'product_id' => $product->id,
+                            'stock_in_line_id' => $stockInLine->id,
+                            'serial_number' => $serial,
+                            'serial_source' => SerialSource::Factory,
+                            'current_status' => StockItemStatus::Received,
+                            'is_available' => true,
+                            'last_movement_at' => now(),
+                        ]);
+
+                        StockMovement::query()->create([
+                            'movement_datetime' => now(),
+                            'product_id' => $product->id,
+                            'stock_item_id' => $stockItem->id,
+                            'movement_type' => MovementType::StockIn,
+                            'reference_table' => 'stock_in_lines',
+                            'reference_id' => $stockInLine->id,
+                            'qty_in' => 1,
+                            'qty_out' => 0,
+                            'to_status' => StockItemStatus::Received->value,
+                            'performed_by' => (int) $data['stock_in_pic_id'],
+                            'remarks' => $line['remarks'] ?? null,
+                        ]);
+                    }
+
+                    continue;
+                }
+
+                if ($product->product_type === ProductType::Accessory) {
+                    for ($i = 0; $i < $receivedQty; $i++) {
+                        $stockItem = StockItem::query()->create([
+                            'product_id' => $product->id,
+                            'stock_in_line_id' => $stockInLine->id,
+                            'serial_number' => $this->serialNumberGenerator->generate($product->product_code),
+                            'serial_source' => SerialSource::Generated,
+                            'current_status' => StockItemStatus::Received,
+                            'is_available' => true,
+                            'last_movement_at' => now(),
+                        ]);
+
+                        StockMovement::query()->create([
+                            'movement_datetime' => now(),
+                            'product_id' => $product->id,
+                            'stock_item_id' => $stockItem->id,
+                            'movement_type' => MovementType::StockIn,
+                            'reference_table' => 'stock_in_lines',
+                            'reference_id' => $stockInLine->id,
+                            'qty_in' => 1,
+                            'qty_out' => 0,
+                            'to_status' => StockItemStatus::Received->value,
+                            'performed_by' => (int) $data['stock_in_pic_id'],
+                            'remarks' => $line['remarks'] ?? null,
+                        ]);
+                    }
+
+                    continue;
+                }
+
+                StockMovement::query()->create([
+                    'movement_datetime' => now(),
+                    'product_id' => $product->id,
+                    'stock_item_id' => null,
+                    'movement_type' => MovementType::StockIn,
+                    'reference_table' => 'stock_in_lines',
+                    'reference_id' => $stockInLine->id,
+                    'qty_in' => $receivedQty,
+                    'qty_out' => 0,
+                    'performed_by' => (int) $data['stock_in_pic_id'],
+                    'remarks' => $line['remarks'] ?? null,
+                ]);
+            }
+
+            return $stockIn->fresh('lines.stockItems');
+        });
+    }
+}
