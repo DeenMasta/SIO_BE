@@ -5,6 +5,7 @@ namespace App\Http\Requests\Api\MasterData\Product;
 use App\Domain\MasterData\Enums\ProductType;
 use App\Domain\MasterData\Enums\RecordStatus;
 use App\Http\Requests\Api\StrictFormRequest;
+use App\Models\ProductCondition;
 use Illuminate\Validation\Rule;
 
 class StoreProductRequest extends StrictFormRequest
@@ -28,6 +29,12 @@ class StoreProductRequest extends StrictFormRequest
             'reorder_level' => ['nullable', 'integer', 'min:0'],
             'remarks' => ['nullable', 'string', 'max:2000'],
             'status' => ['required', Rule::enum(RecordStatus::class)],
+            'accessories' => ['nullable', 'array', 'max:50'],
+            'accessories.*.accessory_name' => ['required_with:accessories', 'string', 'max:150'],
+            'accessories.*.quantity' => ['nullable', 'integer', 'min:1'],
+            'accessories.*.remarks' => ['nullable', 'string', 'max:500'],
+            'conditions' => ['nullable', 'array', 'max:50'],
+            'conditions.*.condition_name' => ['required_with:conditions', 'string', Rule::in(ProductCondition::availableConditions())],
         ];
     }
 
@@ -42,6 +49,8 @@ class StoreProductRequest extends StrictFormRequest
             'reorder_level',
             'remarks',
             'status',
+            'accessories',
+            'conditions',
         ];
     }
 }

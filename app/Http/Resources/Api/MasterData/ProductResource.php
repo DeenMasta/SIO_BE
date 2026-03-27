@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api\MasterData;
 
+use App\Models\ProductCondition;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -22,6 +23,17 @@ class ProductResource extends JsonResource
             'reorder_level' => $this->reorder_level,
             'remarks' => $this->remarks,
             'status' => $this->status?->value,
+            'accessories' => $this->accessories->map(fn ($accessory): array => [
+                'id' => $accessory->id,
+                'accessory_name' => $accessory->accessory_name,
+                'quantity' => $accessory->quantity,
+                'remarks' => $accessory->remarks,
+            ]),
+            'conditions' => $this->conditions->map(fn ($condition): array => [
+                'id' => $condition->id,
+                'condition_name' => $condition->condition_name,
+            ]),
+            'condition_options' => ProductCondition::availableConditions(),
             'created_by' => $this->created_by,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

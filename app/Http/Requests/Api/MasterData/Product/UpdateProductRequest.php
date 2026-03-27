@@ -6,6 +6,7 @@ use App\Domain\MasterData\Enums\ProductType;
 use App\Domain\MasterData\Enums\RecordStatus;
 use App\Http\Requests\Api\StrictFormRequest;
 use App\Models\Product;
+use App\Models\ProductCondition;
 use Illuminate\Validation\Rule;
 
 class UpdateProductRequest extends StrictFormRequest
@@ -32,6 +33,12 @@ class UpdateProductRequest extends StrictFormRequest
             'reorder_level' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'remarks' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'status' => ['sometimes', 'required', Rule::enum(RecordStatus::class)],
+            'accessories' => ['sometimes', 'nullable', 'array', 'max:50'],
+            'accessories.*.accessory_name' => ['required_with:accessories', 'string', 'max:150'],
+            'accessories.*.quantity' => ['nullable', 'integer', 'min:1'],
+            'accessories.*.remarks' => ['nullable', 'string', 'max:500'],
+            'conditions' => ['sometimes', 'nullable', 'array', 'max:50'],
+            'conditions.*.condition_name' => ['required_with:conditions', 'string', Rule::in(ProductCondition::availableConditions())],
         ];
     }
 
@@ -46,6 +53,8 @@ class UpdateProductRequest extends StrictFormRequest
             'reorder_level',
             'remarks',
             'status',
+            'accessories',
+            'conditions',
         ];
     }
 }

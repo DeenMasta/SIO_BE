@@ -54,15 +54,73 @@ class MasterDataApiTest extends TestCase
             'uom' => 'PCS',
             'reorder_level' => 10,
             'status' => 'ACTIVE',
+            'accessories' => [
+                [
+                    'accessory_name' => 'Charging Cable',
+                    'quantity' => 1,
+                ],
+                [
+                    'accessory_name' => 'Power Adapter',
+                    'quantity' => 1,
+                    'remarks' => 'EU plug',
+                ],
+            ],
+            'conditions' => [
+                ['condition_name' => 'Body Condition'],
+                ['condition_name' => 'Sound Function'],
+                ['condition_name' => 'SN Match'],
+            ],
         ])->assertCreated();
 
         $id = (int) $created->json('data.id');
 
+        $created
+            ->assertJsonCount(2, 'data.accessories')
+            ->assertJsonPath('data.accessories.0.accessory_name', 'Charging Cable')
+            ->assertJsonPath('data.accessories.1.accessory_name', 'Power Adapter')
+            ->assertJsonCount(3, 'data.conditions')
+            ->assertJsonPath('data.conditions.0.condition_name', 'Body Condition');
+
         $this->patchJson('/api/products/'.$id, [
             'product_name' => 'Barcode Scanner Pro',
+            'accessories' => [
+                [
+                    'accessory_name' => 'Charging Dock',
+                    'quantity' => 1,
+                ],
+            ],
+            'conditions' => [
+                ['condition_name' => 'Connectivity Check'],
+                ['condition_name' => 'Power Indicator'],
+            ],
         ])
             ->assertOk()
-            ->assertJsonPath('data.product_name', 'Barcode Scanner Pro');
+            ->assertJsonPath('data.product_name', 'Barcode Scanner Pro')
+            ->assertJsonCount(1, 'data.accessories')
+            ->assertJsonPath('data.accessories.0.accessory_name', 'Charging Dock')
+            ->assertJsonCount(2, 'data.conditions')
+            ->assertJsonPath('data.conditions.1.condition_name', 'Power Indicator');
+
+        $this->assertDatabaseHas('product_accessories', [
+            'product_id' => $id,
+            'accessory_name' => 'Charging Dock',
+            'quantity' => 1,
+        ]);
+
+        $this->assertDatabaseMissing('product_accessories', [
+            'product_id' => $id,
+            'accessory_name' => 'Power Adapter',
+        ]);
+
+        $this->assertDatabaseHas('product_conditions', [
+            'product_id' => $id,
+            'condition_name' => 'Connectivity Check',
+        ]);
+
+        $this->assertDatabaseMissing('product_conditions', [
+            'product_id' => $id,
+            'condition_name' => 'SN Match',
+        ]);
 
         $this->deleteJson('/api/products/'.$id)
             ->assertOk()

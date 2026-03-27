@@ -62,7 +62,7 @@ class ProductController extends Controller
     {
         $this->authorize('view', $product);
 
-        return ApiResponse::success(new ProductResource($product), 'Product retrieved successfully.');
+        return ApiResponse::success(new ProductResource($product->loadMissing('accessories', 'conditions')), 'Product retrieved successfully.');
     }
 
     public function update(UpdateProductRequest $request, Product $product): JsonResponse
