@@ -22,6 +22,7 @@ class MasterDataApiTest extends TestCase
     public function test_staff_can_view_products_but_cannot_create_product(): void
     {
         Product::factory()->count(2)->create();
+        $supplier = Supplier::factory()->create();
         $staff = User::factory()->staff()->create();
         Sanctum::actingAs($staff, ['staff-access']);
 
@@ -34,6 +35,7 @@ class MasterDataApiTest extends TestCase
             'product_code' => 'PRD-0001',
             'product_name' => 'Router X',
             'product_type' => 'DEVICE',
+            'supplier_id' => $supplier->id,
             'selling_price' => 150,
             'uom' => 'PCS',
             'reorder_level' => 5,
@@ -44,12 +46,14 @@ class MasterDataApiTest extends TestCase
     public function test_admin_can_crud_product(): void
     {
         $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
         Sanctum::actingAs($admin, ['admin-access']);
 
         $created = $this->postJson('/api/products', [
             'product_code' => 'PRD-1001',
             'product_name' => 'Barcode Scanner',
             'product_type' => 'DEVICE',
+            'supplier_id' => $supplier->id,
             'selling_price' => 450.75,
             'uom' => 'PCS',
             'reorder_level' => 10,
@@ -75,6 +79,8 @@ class MasterDataApiTest extends TestCase
         $id = (int) $created->json('data.id');
 
         $created
+            ->assertJsonPath('data.supplier_id', $supplier->id)
+            ->assertJsonPath('data.supplier.id', $supplier->id)
             ->assertJsonCount(2, 'data.accessories')
             ->assertJsonPath('data.accessories.0.accessory_name', 'Charging Cable')
             ->assertJsonPath('data.accessories.1.accessory_name', 'Power Adapter')
@@ -130,6 +136,7 @@ class MasterDataApiTest extends TestCase
     public function test_product_create_rejects_unknown_fields_and_duplicate_code(): void
     {
         $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
         Sanctum::actingAs($admin, ['admin-access']);
 
         Product::factory()->create(['product_code' => 'PRD-2222']);
@@ -138,6 +145,7 @@ class MasterDataApiTest extends TestCase
             'product_code' => 'PRD-2222',
             'product_name' => 'Duplicate Product',
             'product_type' => 'ACCESSORY',
+            'supplier_id' => $supplier->id,
             'selling_price' => 9.99,
             'uom' => 'PCS',
             'status' => 'ACTIVE',

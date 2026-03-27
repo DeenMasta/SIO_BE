@@ -62,7 +62,7 @@ class UpdateProductUseCase implements UseCase
                 }
             }
 
-            return $updated->load('accessories', 'conditions');
+            return $updated->load('supplier', 'accessories', 'conditions');
         });
     }
 }

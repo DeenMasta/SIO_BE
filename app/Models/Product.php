@@ -6,6 +6,7 @@ use App\Domain\MasterData\Enums\ProductType;
 use App\Domain\MasterData\Enums\RecordStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Product extends Model
@@ -16,6 +17,7 @@ class Product extends Model
         'product_code',
         'product_name',
         'product_type',
+        'supplier_id',
         'selling_price',
         'uom',
         'reorder_level',
@@ -32,6 +34,11 @@ class Product extends Model
             'selling_price' => 'decimal:2',
             'reorder_level' => 'integer',
         ];
+    }
+
+    public function supplier(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class);
     }
 
     public function accessories(): HasMany

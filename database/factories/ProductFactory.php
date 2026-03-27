@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Product;
+use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -22,6 +23,7 @@ class ProductFactory extends Factory
             'product_code' => strtoupper(fake()->bothify('PRD-####')),
             'product_name' => fake()->words(3, true),
             'product_type' => fake()->randomElement(['DEVICE', 'ACCESSORY', 'CONSUMABLE']),
+            'supplier_id' => Supplier::factory(),
             'selling_price' => fake()->randomFloat(2, 10, 1000),
             'uom' => fake()->randomElement(['PCS', 'BOX']),
             'reorder_level' => fake()->numberBetween(0, 100),

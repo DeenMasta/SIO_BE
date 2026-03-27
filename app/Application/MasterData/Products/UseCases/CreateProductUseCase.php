@@ -46,7 +46,7 @@ class CreateProductUseCase implements UseCase
                 ));
             }
 
-            return $product->load('accessories', 'conditions');
+            return $product->load('supplier', 'accessories', 'conditions');
         });
     }
 }

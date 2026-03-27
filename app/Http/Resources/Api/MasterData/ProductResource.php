@@ -18,6 +18,12 @@ class ProductResource extends JsonResource
             'product_code' => $this->product_code,
             'product_name' => $this->product_name,
             'product_type' => $this->product_type?->value,
+            'supplier_id' => $this->supplier_id,
+            'supplier' => $this->supplier ? [
+                'id' => $this->supplier->id,
+                'supplier_code' => $this->supplier->supplier_code,
+                'supplier_name' => $this->supplier->supplier_name,
+            ] : null,
             'selling_price' => (string) $this->selling_price,
             'uom' => $this->uom,
             'reorder_level' => $this->reorder_level,
