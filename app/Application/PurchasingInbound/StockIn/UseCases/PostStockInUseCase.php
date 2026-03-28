@@ -20,6 +20,7 @@ use App\Models\StockIn;
 use App\Models\StockItem;
 use App\Models\StockMovement;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -42,21 +43,23 @@ class PostStockInUseCase implements UseCase
             $purchaseOrder = null;
 
             if ($purchaseOrderId !== null) {
-                $purchaseOrder = PurchaseOrder::query()->with('lines')->findOrFail((int) $purchaseOrderId);
+                $purchaseOrder = PurchaseOrder::query()->with('lines.product')->findOrFail((int) $purchaseOrderId);
                 if ((int) $purchaseOrder->supplier_id !== (int) $data['supplier_id']) {
                     throw ValidationException::withMessages([
                         'purchase_order_id' => ['Purchase order supplier does not match selected supplier.'],
                     ]);
                 }
 
-                if (in_array($purchaseOrder->status, [PurchaseOrderStatus::Cancelled, PurchaseOrderStatus::Completed], true)) {
+                if ($purchaseOrder->status !== PurchaseOrderStatus::Issued) {
                     throw ValidationException::withMessages([
-                        'purchase_order_id' => ['Stock in cannot be posted to a cancelled or completed purchase order.'],
+                        'purchase_order_id' => ['Stock in can only be posted to an issued purchase order.'],
                     ]);
                 }
 
                 $this->validatePurchaseOrderReceiving($purchaseOrder, $data['lines']);
             }
+
+            $this->validateSerialNumbers($data['lines']);
 
             $stockIn = StockIn::query()->create([
                 'stock_in_number' => $data['stock_in_number'],
@@ -71,38 +74,62 @@ class PostStockInUseCase implements UseCase
             ]);
 
             foreach ($data['lines'] as $line) {
-                $product = Product::query()->findOrFail((int) $line['product_id']);
+                $purchaseOrderLine = $this->resolvePurchaseOrderLine($purchaseOrder, $line);
+                $product = $purchaseOrderLine?->product ?? Product::query()->findOrFail((int) $line['product_id']);
                 $receivedQty = (int) $line['received_qty'];
+                $lineCondition = $this->resolveLineCondition($line, $receivedQty);
+                $unitReceipts = $this->buildUnitReceipts($line, $receivedQty, $lineCondition);
+                $allowGeneratedSerials = (bool) ($line['allow_generated_serials'] ?? false);
 
                 $stockInLine = $stockIn->lines()->create([
+                    'purchase_order_line_id' => $purchaseOrderLine?->id,
                     'product_id' => $product->id,
                     'received_qty' => $receivedQty,
-                    'condition_at_receiving' => $line['condition_at_receiving'] ?? null,
+                    'condition_at_receiving' => $lineCondition,
                     'remarks' => $line['remarks'] ?? null,
                 ]);
 
-                if ($purchaseOrder !== null) {
-                    $this->applyReceiptToPurchaseOrderLine($purchaseOrder, $product->id, $receivedQty);
+                if ($purchaseOrderLine !== null) {
+                    $this->applyReceiptToPurchaseOrderLine($purchaseOrderLine, $receivedQty);
                 }
 
                 $serials = array_values(array_map('strval', Arr::wrap($line['serial_numbers'] ?? [])));
 
                 if ($product->product_type === ProductType::Device) {
-                    if (count($serials) !== $receivedQty) {
+                    if (count($unitReceipts) !== $receivedQty) {
                         throw ValidationException::withMessages([
-                            'lines' => ['DEVICE items require serial_numbers count to match received_qty.'],
+                            'lines' => ['DEVICE items require one unit_receipt per received unit.'],
                         ]);
                     }
 
-                    foreach ($serials as $serial) {
+                    foreach ($unitReceipts as $unitReceipt) {
+                        $incomingSerial = trim((string) ($unitReceipt['serial_number'] ?? ''));
+                        $itemCondition = trim((string) ($unitReceipt['condition'] ?? '')) ?: $lineCondition;
+                        $itemRemarks = $unitReceipt['remarks'] ?? ($line['remarks'] ?? null);
+
+                        if ($incomingSerial === '' && ! $allowGeneratedSerials) {
+                            throw ValidationException::withMessages([
+                                'lines' => ['DEVICE items require serial_number for every unit unless allow_generated_serials is enabled.'],
+                            ]);
+                        }
+
+                        $serialValue = $incomingSerial !== ''
+                            ? $incomingSerial
+                            : $this->serialNumberGenerator->generate($product->product_code);
+
+                        $serialSource = $incomingSerial !== '' ? SerialSource::Factory : SerialSource::Generated;
+
                         $stockItem = StockItem::query()->create([
                             'product_id' => $product->id,
                             'stock_in_line_id' => $stockInLine->id,
-                            'serial_number' => $serial,
-                            'serial_source' => SerialSource::Factory,
+                            'serial_number' => $serialValue,
+                            'factory_serial_number' => $incomingSerial !== '' ? $incomingSerial : null,
+                            'serial_source' => $serialSource,
                             'current_status' => StockItemStatus::Received,
+                            'received_condition' => $itemCondition !== '' ? $itemCondition : null,
                             'is_available' => true,
                             'last_movement_at' => now(),
+                            'remarks' => $itemRemarks,
                         ]);
 
                         StockMovement::query()->create([
@@ -116,7 +143,7 @@ class PostStockInUseCase implements UseCase
                             'qty_out' => 0,
                             'to_status' => StockItemStatus::Received->value,
                             'performed_by' => (int) $data['stock_in_pic_id'],
-                            'remarks' => $line['remarks'] ?? null,
+                            'remarks' => $itemRemarks,
                         ]);
 
                         $this->stockBalances->incrementStatus($product->id, StockItemStatus::Received, 1);
@@ -127,14 +154,28 @@ class PostStockInUseCase implements UseCase
 
                 if ($product->product_type === ProductType::Accessory) {
                     for ($i = 0; $i < $receivedQty; $i++) {
+                        $unitReceipt = $unitReceipts[$i] ?? [];
+                        $incomingSerial = trim((string) ($unitReceipt['serial_number'] ?? ''));
+                        $itemCondition = trim((string) ($unitReceipt['condition'] ?? '')) ?: $lineCondition;
+                        $itemRemarks = $unitReceipt['remarks'] ?? ($line['remarks'] ?? null);
+
+                        $serialValue = $incomingSerial !== ''
+                            ? $incomingSerial
+                            : $this->serialNumberGenerator->generate($product->product_code);
+
+                        $serialSource = $incomingSerial !== '' ? SerialSource::Factory : SerialSource::Generated;
+
                         $stockItem = StockItem::query()->create([
                             'product_id' => $product->id,
                             'stock_in_line_id' => $stockInLine->id,
-                            'serial_number' => $this->serialNumberGenerator->generate($product->product_code),
-                            'serial_source' => SerialSource::Generated,
+                            'serial_number' => $serialValue,
+                            'factory_serial_number' => $incomingSerial !== '' ? $incomingSerial : null,
+                            'serial_source' => $serialSource,
                             'current_status' => StockItemStatus::Received,
+                            'received_condition' => $itemCondition !== '' ? $itemCondition : null,
                             'is_available' => true,
                             'last_movement_at' => now(),
+                            'remarks' => $itemRemarks,
                         ]);
 
                         StockMovement::query()->create([
@@ -148,7 +189,7 @@ class PostStockInUseCase implements UseCase
                             'qty_out' => 0,
                             'to_status' => StockItemStatus::Received->value,
                             'performed_by' => (int) $data['stock_in_pic_id'],
-                            'remarks' => $line['remarks'] ?? null,
+                            'remarks' => $itemRemarks,
                         ]);
 
                         $this->stockBalances->incrementStatus($product->id, StockItemStatus::Received, 1);
@@ -174,12 +215,16 @@ class PostStockInUseCase implements UseCase
 
             }
 
+            if ($purchaseOrder !== null) {
+                $purchaseOrder->refresh()->load('lines.product');
+            }
+
             if ($purchaseOrder !== null && $this->isPurchaseOrderFulfilled($purchaseOrder)) {
                 $purchaseOrder->status = PurchaseOrderStatus::Completed;
                 $purchaseOrder->save();
             }
 
-            $result = $stockIn->fresh('lines.stockItems');
+            $result = $stockIn->fresh('lines.product', 'lines.stockItems');
 
             $this->auditLogger->log(
                 userId: (int) $data['stock_in_pic_id'],
@@ -199,53 +244,146 @@ class PostStockInUseCase implements UseCase
      */
     private function validatePurchaseOrderReceiving(PurchaseOrder $purchaseOrder, array $stockInLines): void
     {
-        $incomingByProduct = [];
+        foreach ($stockInLines as $index => $line) {
+            $purchaseOrderLineId = (int) ($line['purchase_order_line_id'] ?? 0);
+            $purchaseOrderLine = $purchaseOrder->lines->firstWhere('id', $purchaseOrderLineId);
 
-        foreach ($stockInLines as $line) {
-            $productId = (int) $line['product_id'];
-            $incomingByProduct[$productId] = ($incomingByProduct[$productId] ?? 0) + (int) $line['received_qty'];
-        }
-
-        foreach ($incomingByProduct as $productId => $incomingQty) {
-            $matchingLines = $purchaseOrder->lines->where('product_id', $productId);
-
-            if ($matchingLines->isEmpty()) {
+            if (! $purchaseOrderLine instanceof PurchaseOrderLine) {
                 throw ValidationException::withMessages([
-                    'lines' => [sprintf('Product %d is not present in the selected purchase order.', $productId)],
+                    "lines.$index.purchase_order_line_id" => [
+                        sprintf('Purchase order line %d does not belong to the selected purchase order.', $purchaseOrderLineId),
+                    ],
                 ]);
             }
 
-            $orderedQty = (int) $matchingLines->sum('ordered_qty');
-            $receivedQty = (int) $matchingLines->sum('received_qty');
-
-            if ($receivedQty + $incomingQty > $orderedQty) {
+            $productId = $line['product_id'] ?? null;
+            if ($productId !== null && (int) $productId !== (int) $purchaseOrderLine->product_id) {
                 throw ValidationException::withMessages([
-                    'lines' => [sprintf('Received quantity for product %d exceeds ordered quantity.', $productId)],
+                    "lines.$index.product_id" => [
+                        sprintf(
+                            'Product %d does not match purchase order line %d.',
+                            (int) $productId,
+                            $purchaseOrderLineId,
+                        ),
+                    ],
+                ]);
+            }
+
+            $orderedQty  = (int) $purchaseOrderLine->ordered_qty;
+            $receivedSoFar = (int) $purchaseOrderLine->received_qty;
+            $remainingQty = max($orderedQty - $receivedSoFar, 0);
+
+            if ((int) $line['received_qty'] > $remainingQty) {
+                throw ValidationException::withMessages([
+                    "lines.$index.received_qty" => [
+                        sprintf(
+                            'Cannot receive %d unit(s) for PO line %d — ordered: %d, already received: %d, remaining: %d.',
+                            (int) $line['received_qty'],
+                            $purchaseOrderLineId,
+                            $orderedQty,
+                            $receivedSoFar,
+                            $remainingQty,
+                        ),
+                    ],
                 ]);
             }
         }
     }
 
-    private function applyReceiptToPurchaseOrderLine(PurchaseOrder $purchaseOrder, int $productId, int $incomingQty): void
+    /**
+     * @param  array<string, mixed>  $line
+     */
+    private function resolvePurchaseOrderLine(?PurchaseOrder $purchaseOrder, array $line): ?PurchaseOrderLine
     {
-        $remaining = $incomingQty;
-
-        /** @var PurchaseOrderLine $line */
-        foreach ($purchaseOrder->lines->where('product_id', $productId)->sortBy('id') as $line) {
-            $lineRemaining = (int) $line->ordered_qty - (int) $line->received_qty;
-            if ($lineRemaining <= 0) {
-                continue;
-            }
-
-            $toApply = min($remaining, $lineRemaining);
-            $line->received_qty = (int) $line->received_qty + $toApply;
-            $line->save();
-
-            $remaining -= $toApply;
-            if ($remaining === 0) {
-                break;
-            }
+        if ($purchaseOrder === null) {
+            return null;
         }
+
+        $purchaseOrderLine = $purchaseOrder->lines->firstWhere('id', (int) $line['purchase_order_line_id']);
+
+        if (! $purchaseOrderLine instanceof PurchaseOrderLine) {
+            throw ValidationException::withMessages([
+                'lines' => ['Selected purchase order line is invalid.'],
+            ]);
+        }
+
+        return $purchaseOrderLine;
+    }
+
+    private function applyReceiptToPurchaseOrderLine(PurchaseOrderLine $purchaseOrderLine, int $incomingQty): void
+    {
+        $purchaseOrderLine->received_qty = (int) $purchaseOrderLine->received_qty + $incomingQty;
+        $purchaseOrderLine->save();
+    }
+
+    /**
+     * @param  array<string, mixed>  $line
+     */
+    private function resolveLineCondition(array $line, int $receivedQty): ?string
+    {
+        $lineCondition = trim((string) ($line['condition_at_receiving'] ?? ''));
+        if ($lineCondition !== '') {
+            return $lineCondition;
+        }
+
+        $unitConditions = array_values(array_filter(array_map(
+            static fn (mixed $unit): string => trim((string) (is_array($unit) ? ($unit['condition'] ?? '') : '')),
+            Arr::wrap($line['unit_receipts'] ?? []),
+        )));
+
+        if ($unitConditions === []) {
+            return null;
+        }
+
+        $unique = array_values(array_unique($unitConditions));
+        if (count($unique) === 1) {
+            return $unique[0];
+        }
+
+        if (count($unitConditions) === $receivedQty) {
+            return 'MIXED';
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $line
+     * @return array<int, array{serial_number:string, condition:string, remarks:?string}>
+     */
+    private function buildUnitReceipts(array $line, int $receivedQty, ?string $fallbackCondition): array
+    {
+        $unitReceiptsInput = Arr::wrap($line['unit_receipts'] ?? []);
+
+        if ($unitReceiptsInput !== []) {
+            return array_map(static function (mixed $unit) use ($fallbackCondition): array {
+                $entry = is_array($unit) ? $unit : [];
+
+                return [
+                    'serial_number' => trim((string) ($entry['serial_number'] ?? '')),
+                    'condition' => trim((string) ($entry['condition'] ?? '')) ?: (string) ($fallbackCondition ?? ''),
+                    'remarks' => array_key_exists('remarks', $entry)
+                        ? (string) ($entry['remarks'] ?? '')
+                        : null,
+                ];
+            }, $unitReceiptsInput);
+        }
+
+        $serials = array_values(array_map('strval', Arr::wrap($line['serial_numbers'] ?? [])));
+
+        if ($serials !== []) {
+            return array_map(static fn (string $serial): array => [
+                'serial_number' => trim($serial),
+                'condition' => (string) ($fallbackCondition ?? ''),
+                'remarks' => null,
+            ], $serials);
+        }
+
+        return array_fill(0, $receivedQty, [
+            'serial_number' => '',
+            'condition' => (string) ($fallbackCondition ?? ''),
+            'remarks' => null,
+        ]);
     }
 
     private function isPurchaseOrderFulfilled(PurchaseOrder $purchaseOrder): bool
@@ -253,5 +391,81 @@ class PostStockInUseCase implements UseCase
         return $purchaseOrder->lines->every(function (PurchaseOrderLine $line): bool {
             return (int) $line->received_qty >= (int) $line->ordered_qty;
         });
+    }
+
+    /**
+     * Validate that no DEVICE serial numbers are duplicated — either within
+     * the same request payload or against existing stock_items in the DB.
+     *
+     * @param  array<int, array<string, mixed>>  $stockInLines
+     */
+    private function validateSerialNumbers(array $stockInLines): void
+    {
+        /** @var array<string> $allSerials  All serials across every line in this request */
+        $allSerials = [];
+
+        foreach ($stockInLines as $index => $line) {
+            $serials = array_values(array_map('strval', Arr::wrap($line['serial_numbers'] ?? [])));
+            $unitSerials = array_values(array_filter(array_map(
+                static fn (mixed $unit): string => trim((string) (is_array($unit) ? ($unit['serial_number'] ?? '') : '')),
+                Arr::wrap($line['unit_receipts'] ?? []),
+            )));
+
+            $serials = array_values(array_filter(array_merge($serials, $unitSerials), static fn (string $value): bool => trim($value) !== ''));
+
+            if (empty($serials)) {
+                continue;
+            }
+
+            // 1. Detect duplicates within this request payload.
+            $duplicatesInPayload = array_values(
+                array_unique(
+                    array_intersect($serials, $allSerials)
+                )
+            );
+
+            if (! empty($duplicatesInPayload)) {
+                throw ValidationException::withMessages([
+                    "lines.$index.serial_numbers" => [
+                        sprintf(
+                            'Duplicate serial number(s) found within the same request: %s.',
+                            implode(', ', $duplicatesInPayload)
+                        ),
+                    ],
+                ]);
+            }
+
+            array_push($allSerials, ...$serials);
+        }
+
+        if (empty($allSerials)) {
+            return;
+        }
+
+        // 2. Detect serials that already exist in the database.
+        /** @var Collection<int, string> $existingSerials */
+        $existingSerials = StockItem::query()
+            ->whereIn('serial_number', $allSerials)
+            ->orWhereIn('factory_serial_number', $allSerials)
+            ->get(['serial_number', 'factory_serial_number'])
+            ->flatMap(static function (StockItem $item): array {
+                return array_values(array_filter([
+                    (string) ($item->serial_number ?? ''),
+                    (string) ($item->factory_serial_number ?? ''),
+                ]));
+            })
+            ->unique()
+            ->values();
+
+        if ($existingSerials->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'lines' => [
+                    sprintf(
+                        'The following serial number(s) are already registered in the system: %s.',
+                        $existingSerials->implode(', ')
+                    ),
+                ],
+            ]);
+        }
     }
 }

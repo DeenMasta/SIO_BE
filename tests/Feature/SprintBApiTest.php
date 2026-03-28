@@ -193,6 +193,7 @@ class SprintBApiTest extends TestCase
         ])->assertCreated();
 
         $poId = (int) $po->json('data.id');
+        $poLineId = (int) $po->json('data.lines.0.id');
         $this->patchJson('/api/purchase-orders/'.$poId.'/issue')->assertOk();
 
         $stockIn = $this->postJson('/api/stock-ins', [
@@ -202,7 +203,7 @@ class SprintBApiTest extends TestCase
             'purchase_order_id' => $poId,
             'supplier_id' => $supplier->id,
             'lines' => [[
-                'product_id' => $product->id,
+                'purchase_order_line_id' => $poLineId,
                 'received_qty' => 3,
             ]],
         ])->assertCreated();

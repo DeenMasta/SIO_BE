@@ -10,12 +10,12 @@ class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
 {
     public function paginate(int $perPage = 15): LengthAwarePaginator
     {
-        return PurchaseOrder::query()->with('lines')->latest('id')->paginate($perPage);
+        return PurchaseOrder::query()->with('lines.product')->latest('id')->paginate($perPage);
     }
 
     public function findOrFail(int $id): PurchaseOrder
     {
-        return PurchaseOrder::query()->with('lines')->findOrFail($id);
+        return PurchaseOrder::query()->with('lines.product')->findOrFail($id);
     }
 
     public function createWithLines(array $data): PurchaseOrder
@@ -31,6 +31,6 @@ class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
             $purchaseOrder->lines()->create($line);
         }
 
-        return $purchaseOrder->fresh('lines');
+        return $purchaseOrder->fresh('lines.product');
     }
 }

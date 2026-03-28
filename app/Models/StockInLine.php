@@ -13,6 +13,7 @@ class StockInLine extends Model
 
     protected $fillable = [
         'stock_in_id',
+        'purchase_order_line_id',
         'product_id',
         'received_qty',
         'condition_at_receiving',
@@ -29,6 +30,11 @@ class StockInLine extends Model
     public function stockIn(): BelongsTo
     {
         return $this->belongsTo(StockIn::class);
+    }
+
+    public function purchaseOrderLine(): BelongsTo
+    {
+        return $this->belongsTo(PurchaseOrderLine::class);
     }
 
     public function product(): BelongsTo

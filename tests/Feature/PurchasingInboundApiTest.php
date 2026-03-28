@@ -67,6 +67,7 @@ class PurchasingInboundApiTest extends TestCase
         ])->assertCreated();
 
         $purchaseOrderId = (int) $createPo->json('data.id');
+        $purchaseOrderLineId = (int) $createPo->json('data.lines.0.id');
 
         $this->patchJson('/api/purchase-orders/'.$purchaseOrderId.'/issue')->assertOk();
 
@@ -77,7 +78,7 @@ class PurchasingInboundApiTest extends TestCase
             'supplier_id' => $supplier->id,
             'lines' => [
                 [
-                    'product_id' => $product->id,
+                    'purchase_order_line_id' => $purchaseOrderLineId,
                     'received_qty' => 3,
                 ],
             ],
@@ -156,7 +157,7 @@ class PurchasingInboundApiTest extends TestCase
             'supplier_id' => $supplier->id,
             'lines' => [
                 [
-                    'product_id' => $product->id,
+                    'purchase_order_line_id' => $poLineId,
                     'received_qty' => 2,
                 ],
             ],
@@ -178,7 +179,7 @@ class PurchasingInboundApiTest extends TestCase
             'supplier_id' => $supplier->id,
             'lines' => [
                 [
-                    'product_id' => $product->id,
+                    'purchase_order_line_id' => $poLineId,
                     'received_qty' => 3,
                 ],
             ],
@@ -216,6 +217,7 @@ class PurchasingInboundApiTest extends TestCase
         ])->assertCreated();
 
         $poId = (int) $po->json('data.id');
+        $poLineId = (int) $po->json('data.lines.0.id');
         $this->patchJson('/api/purchase-orders/'.$poId.'/issue')->assertOk();
 
         $this->postJson('/api/stock-ins', [
@@ -225,11 +227,93 @@ class PurchasingInboundApiTest extends TestCase
             'supplier_id' => $supplier->id,
             'lines' => [
                 [
-                    'product_id' => $product->id,
+                    'purchase_order_line_id' => $poLineId,
                     'received_qty' => 3,
                 ],
             ],
         ])->assertUnprocessable();
+    }
+
+    public function test_stock_in_requires_purchase_order_line_id_for_po_linked_receiving(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $po = $this->postJson('/api/purchase-orders', [
+            'po_number' => 'PO-100061',
+            'po_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 2,
+                'unit_price' => 1,
+            ]],
+        ])->assertCreated();
+
+        $poId = (int) $po->json('data.id');
+        $this->patchJson('/api/purchase-orders/'.$poId.'/issue')->assertOk();
+
+        $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-PO-100061-A',
+            'stock_in_date' => now()->toDateString(),
+            'purchase_order_id' => $poId,
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'received_qty' => 1,
+            ]],
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['lines.0.purchase_order_line_id']);
+    }
+
+    public function test_purchase_order_show_includes_remaining_qty_and_product_details(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'product_code' => 'DEV-PO-DETAIL',
+            'product_name' => 'PO Detail Device',
+            'product_type' => 'DEVICE',
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $po = $this->postJson('/api/purchase-orders', [
+            'po_number' => 'PO-100062',
+            'po_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 4,
+                'unit_price' => 50,
+            ]],
+        ])->assertCreated();
+
+        $poId = (int) $po->json('data.id');
+        $poLineId = (int) $po->json('data.lines.0.id');
+        $this->patchJson('/api/purchase-orders/'.$poId.'/issue')->assertOk();
+
+        $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-PO-100062-A',
+            'stock_in_date' => now()->toDateString(),
+            'purchase_order_id' => $poId,
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'purchase_order_line_id' => $poLineId,
+                'received_qty' => 1,
+                'serial_numbers' => ['PO-DETAIL-SN-0001'],
+            ]],
+        ])->assertCreated();
+
+        $this->getJson('/api/purchase-orders/'.$poId)
+            ->assertOk()
+            ->assertJsonPath('data.lines.0.product_code', 'DEV-PO-DETAIL')
+            ->assertJsonPath('data.lines.0.product_name', 'PO Detail Device')
+            ->assertJsonPath('data.lines.0.product_type', 'DEVICE')
+            ->assertJsonPath('data.lines.0.remaining_qty', 3);
     }
 
     public function test_admin_can_post_stock_in_and_create_ledger_records(): void

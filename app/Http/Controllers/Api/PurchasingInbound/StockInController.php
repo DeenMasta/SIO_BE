@@ -6,6 +6,7 @@ use App\Application\Contracts\Repositories\StockInRepository;
 use App\Application\PurchasingInbound\StockIn\UseCases\ListStockInsUseCase;
 use App\Application\PurchasingInbound\StockIn\UseCases\PostStockInUseCase;
 use App\Application\Support\ApiResponse;
+use App\Application\Support\DocumentNumberGenerator;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\PurchasingInbound\StockIn\PostStockInRequest;
 use App\Http\Resources\Api\PurchasingInbound\StockInResource;
@@ -19,6 +20,7 @@ class StockInController extends Controller
         private readonly ListStockInsUseCase $listStockIns,
         private readonly PostStockInUseCase $postStockIn,
         private readonly StockInRepository $stockIns,
+        private readonly DocumentNumberGenerator $documentNumberGenerator,
     ) {
     }
 
@@ -50,6 +52,9 @@ class StockInController extends Controller
 
         $payload = $request->validated();
         $payload['stock_in_pic_id'] = (int) $request->user()->id;
+        $payload['stock_in_number'] = trim((string) ($payload['stock_in_number'] ?? '')) !== ''
+            ? trim((string) $payload['stock_in_number'])
+            : $this->documentNumberGenerator->generateStockInNumber();
 
         $stockIn = $this->postStockIn->execute($payload);
 

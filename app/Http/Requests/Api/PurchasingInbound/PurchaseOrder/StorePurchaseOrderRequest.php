@@ -19,7 +19,7 @@ class StorePurchaseOrderRequest extends StrictFormRequest
     public function rules(): array
     {
         return [
-            'po_number' => ['required', 'string', 'max:50', 'alpha_dash', 'unique:purchase_orders,po_number'],
+            'po_number' => ['nullable', 'string', 'max:50', 'alpha_dash', 'unique:purchase_orders,po_number'],
             'po_date' => ['required', 'date'],
             'supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
             'expected_delivery_date' => ['nullable', 'date'],
@@ -31,6 +31,17 @@ class StorePurchaseOrderRequest extends StrictFormRequest
             'lines.*.unit_price' => ['required', 'numeric', 'min:0'],
             'lines.*.remarks' => ['nullable', 'string', 'max:2000'],
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $poNumber = $this->has('po_number')
+            ? trim((string) $this->input('po_number'))
+            : null;
+
+        $this->merge([
+            'po_number' => $poNumber !== '' ? $poNumber : null,
+        ]);
     }
 
     protected function allowedFields(): array

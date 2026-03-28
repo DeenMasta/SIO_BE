@@ -24,8 +24,12 @@ class PurchaseOrderResource extends JsonResource
             'lines' => $this->lines->map(fn ($line): array => [
                 'id' => $line->id,
                 'product_id' => $line->product_id,
+                'product_code' => $line->product?->product_code,
+                'product_name' => $line->product?->product_name,
+                'product_type' => $line->product?->product_type?->value,
                 'ordered_qty' => $line->ordered_qty,
                 'received_qty' => $line->received_qty,
+                'remaining_qty' => max((int) $line->ordered_qty - (int) $line->received_qty, 0),
                 'unit_price' => (string) $line->unit_price,
                 'subtotal' => (string) $line->subtotal,
                 'remarks' => $line->remarks,

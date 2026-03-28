@@ -19,6 +19,7 @@ class StockItem extends Model
         'factory_serial_number',
         'serial_source',
         'current_status',
+        'received_condition',
         'is_available',
         'last_movement_at',
         'remarks',

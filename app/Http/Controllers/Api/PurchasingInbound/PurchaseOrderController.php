@@ -6,6 +6,7 @@ use App\Application\PurchasingInbound\PurchaseOrders\UseCases\CreatePurchaseOrde
 use App\Application\PurchasingInbound\PurchaseOrders\UseCases\ListPurchaseOrdersUseCase;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\ApiResponse;
+use App\Application\Support\DocumentNumberGenerator;
 use App\Domain\PurchasingInbound\Enums\PurchaseOrderStatus;
 use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Http\Controllers\Controller;
@@ -22,6 +23,7 @@ class PurchaseOrderController extends Controller
         private readonly ListPurchaseOrdersUseCase $listPurchaseOrders,
         private readonly CreatePurchaseOrderUseCase $createPurchaseOrder,
         private readonly AuditLogger $auditLogger,
+        private readonly DocumentNumberGenerator $documentNumberGenerator,
     ) {
     }
 
@@ -54,6 +56,9 @@ class PurchaseOrderController extends Controller
         $payload = $request->validated();
         $payload['created_by'] = (int) $request->user()->id;
         $payload['status'] = $payload['status'] ?? PurchaseOrderStatus::Draft;
+        $payload['po_number'] = trim((string) ($payload['po_number'] ?? '')) !== ''
+            ? trim((string) $payload['po_number'])
+            : $this->documentNumberGenerator->generatePurchaseOrderNumber();
 
         $purchaseOrder = $this->createPurchaseOrder->execute($payload);
 
@@ -64,7 +69,7 @@ class PurchaseOrderController extends Controller
     {
         $this->authorize('view', $purchaseOrder);
 
-        return ApiResponse::success(new PurchaseOrderResource($purchaseOrder->load('lines')), 'Purchase order retrieved successfully.');
+        return ApiResponse::success(new PurchaseOrderResource($purchaseOrder->load('lines.product')), 'Purchase order retrieved successfully.');
     }
 
     public function issue(PurchaseOrder $purchaseOrder, Request $request): JsonResponse
@@ -80,7 +85,7 @@ class PurchaseOrderController extends Controller
             AuditAction::Update,
         );
 
-        return ApiResponse::success(new PurchaseOrderResource($updated->load('lines')), 'Purchase order issued successfully.');
+        return ApiResponse::success(new PurchaseOrderResource($updated->load('lines.product')), 'Purchase order issued successfully.');
     }
 
     public function complete(PurchaseOrder $purchaseOrder, Request $request): JsonResponse
@@ -96,7 +101,7 @@ class PurchaseOrderController extends Controller
             AuditAction::Update,
         );
 
-        return ApiResponse::success(new PurchaseOrderResource($updated->load('lines')), 'Purchase order completed successfully.');
+        return ApiResponse::success(new PurchaseOrderResource($updated->load('lines.product')), 'Purchase order completed successfully.');
     }
 
     public function cancel(PurchaseOrder $purchaseOrder, Request $request): JsonResponse
@@ -112,7 +117,7 @@ class PurchaseOrderController extends Controller
             AuditAction::Cancel,
         );
 
-        return ApiResponse::success(new PurchaseOrderResource($updated->load('lines')), 'Purchase order cancelled successfully.');
+        return ApiResponse::success(new PurchaseOrderResource($updated->load('lines.product')), 'Purchase order cancelled successfully.');
     }
 
     /**
