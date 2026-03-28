@@ -25,7 +25,6 @@ class ReportPackRequest extends StrictFormRequest
             'product_id' => ['nullable', 'integer', 'exists:products,id'],
             'po_number' => ['nullable', 'string', 'max:50'],
             'invoice_number' => ['nullable', 'string', 'max:50'],
-            'delivery_order_number' => ['nullable', 'string', 'max:50'],
             'status' => ['nullable', 'string', 'max:30'],
             'age_bucket' => ['nullable', 'string', 'in:0_7,8_30,31_plus'],
         ];
@@ -42,7 +41,6 @@ class ReportPackRequest extends StrictFormRequest
             'product_id',
             'po_number',
             'invoice_number',
-            'delivery_order_number',
             'status',
             'age_bucket',
         ];

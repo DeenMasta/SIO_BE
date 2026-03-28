@@ -7,7 +7,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\ReportingAudit\Search\SearchCatalogRequest;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
-use App\Models\StockIn;
 use App\Models\StockItem;
 use App\Models\StockOut;
 use Illuminate\Database\Eloquent\Builder;
@@ -71,19 +70,6 @@ class SearchController extends Controller
             ->paginate((int) ($filters['per_page'] ?? 15));
 
         return $this->paginatedResponse($records, 'PO search completed successfully.');
-    }
-
-    public function deliveryOrders(SearchCatalogRequest $request): JsonResponse
-    {
-        $filters = $request->validated();
-
-        $records = StockIn::query()
-            ->select(['id', 'stock_in_number', 'stock_in_date', 'delivery_order_number', 'supplier_id'])
-            ->where('delivery_order_number', 'like', '%'.(string) $filters['query'].'%')
-            ->orderByDesc('id')
-            ->paginate((int) ($filters['per_page'] ?? 15));
-
-        return $this->paginatedResponse($records, 'Delivery order search completed successfully.');
     }
 
     private function paginatedResponse(object $records, string $message): JsonResponse

@@ -23,7 +23,6 @@ class StockInFactory extends Factory
         return [
             'stock_in_number' => strtoupper(fake()->bothify('SIN-######')),
             'stock_in_date' => fake()->date(),
-            'delivery_order_number' => strtoupper(fake()->bothify('DO-#####')),
             'purchase_order_id' => null,
             'supplier_id' => Supplier::factory(),
             'stock_in_pic_id' => User::factory(),

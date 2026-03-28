@@ -7,11 +7,10 @@ use App\Models\Customer;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\QcTransactionLine;
-use App\Models\StockBalance;
 use App\Models\StockIn;
+use App\Models\StockItem;
 use App\Models\StockMovement;
 use App\Models\StockOut;
-use App\Models\StockOutLine;
 use App\Models\Supplier;
 use Illuminate\Support\Facades\DB;
 
@@ -26,18 +25,39 @@ class GetDashboardSummaryUseCase implements UseCase
         $dateFrom = $filters['date_from'] ?? null;
         $dateTo = $filters['date_to'] ?? null;
 
-        $totals = StockBalance::query()->selectRaw('SUM(qty_received_pending_qc) as qty_received_pending_qc')
-            ->selectRaw('SUM(qty_in_stock) as qty_in_stock')
-            ->selectRaw('SUM(qty_delivered) as qty_delivered')
-            ->selectRaw('SUM(qty_under_repair) as qty_under_repair')
-            ->selectRaw('SUM(qty_returned) as qty_returned')
-            ->selectRaw('SUM(qty_returned_to_supplier) as qty_returned_to_supplier')
+        $totals = StockItem::query()
+            ->selectRaw("SUM(CASE WHEN current_status = 'RECEIVED' THEN 1 ELSE 0 END) as qty_received_pending_qc")
+            ->selectRaw("SUM(CASE WHEN current_status = 'IN_STOCK' THEN 1 ELSE 0 END) as qty_in_stock")
+            ->selectRaw("SUM(CASE WHEN current_status = 'DELIVERED' THEN 1 ELSE 0 END) as qty_delivered")
+            ->selectRaw("SUM(CASE WHEN current_status = 'UNDER_REPAIR' THEN 1 ELSE 0 END) as qty_under_repair")
+            ->selectRaw("SUM(CASE WHEN current_status = 'RETURNED' THEN 1 ELSE 0 END) as qty_returned")
+            ->selectRaw("SUM(CASE WHEN current_status = 'RETURNED_TO_SUPPLIER' THEN 1 ELSE 0 END) as qty_returned_to_supplier")
             ->first();
 
+        $nonSerializedTotals = StockMovement::query()
+            ->whereNull('stock_item_id')
+            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'IN_STOCK' THEN qty_in ELSE 0 END), 0) as qty_in_stock_in")
+            ->selectRaw("COALESCE(SUM(CASE WHEN from_status = 'IN_STOCK' THEN qty_out ELSE 0 END), 0) as qty_in_stock_out")
+            ->first();
+
+        $serializedInStockByProduct = StockItem::query()
+            ->selectRaw('product_id, SUM(CASE WHEN current_status = \'IN_STOCK\' THEN 1 ELSE 0 END) as serialized_in_stock')
+            ->groupBy('product_id');
+
+        $nonSerializedInStockByProduct = StockMovement::query()
+            ->whereNull('stock_item_id')
+            ->selectRaw("product_id, COALESCE(SUM(CASE WHEN to_status = 'IN_STOCK' THEN qty_in ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'IN_STOCK' THEN qty_out ELSE 0 END), 0) as non_serialized_in_stock")
+            ->groupBy('product_id');
+
         $lowStockCount = Product::query()
-            ->leftJoin('stock_balances', 'stock_balances.product_id', '=', 'products.id')
+            ->leftJoinSub($serializedInStockByProduct, 'sis', function ($join): void {
+                $join->on('sis.product_id', '=', 'products.id');
+            })
+            ->leftJoinSub($nonSerializedInStockByProduct, 'ns', function ($join): void {
+                $join->on('ns.product_id', '=', 'products.id');
+            })
             ->where('products.reorder_level', '>', 0)
-            ->whereRaw('COALESCE(stock_balances.qty_in_stock, 0) < products.reorder_level')
+            ->whereRaw('COALESCE(sis.serialized_in_stock, 0) + CASE WHEN COALESCE(ns.non_serialized_in_stock, 0) < 0 THEN 0 ELSE COALESCE(ns.non_serialized_in_stock, 0) END < products.reorder_level')
             ->count();
 
         $openPoCount = PurchaseOrder::query()->whereIn('status', ['DRAFT', 'ISSUED'])->count();
@@ -90,12 +110,16 @@ class GetDashboardSummaryUseCase implements UseCase
             ->orderByDesc('mv.moved_qty')
             ->get();
 
+        $itemsInStock =
+            (int) ($totals?->qty_in_stock ?? 0)
+            + max((int) ($nonSerializedTotals?->qty_in_stock_in ?? 0) - (int) ($nonSerializedTotals?->qty_in_stock_out ?? 0), 0);
+
         return [
             'total_products' => Product::query()->count(),
             'total_suppliers' => Supplier::query()->count(),
             'total_customers' => Customer::query()->count(),
             'items_received_pending_qc' => (int) ($totals?->qty_received_pending_qc ?? 0),
-            'items_in_stock' => (int) ($totals?->qty_in_stock ?? 0),
+            'items_in_stock' => $itemsInStock,
             'items_under_repair' => (int) ($totals?->qty_under_repair ?? 0),
             'items_delivered' => (int) ($totals?->qty_delivered ?? 0),
             'items_returned' => (int) ($totals?->qty_returned ?? 0),

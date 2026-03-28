@@ -16,7 +16,6 @@ class StockIn extends Model
     protected $fillable = [
         'stock_in_number',
         'stock_in_date',
-        'delivery_order_number',
         'purchase_order_id',
         'supplier_id',
         'stock_in_pic_id',

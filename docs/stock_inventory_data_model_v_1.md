@@ -118,7 +118,6 @@ This model is designed around these rules:
 - `id` PK
 - `stock_in_number` unique
 - `stock_in_date`
-- `delivery_order_number` nullable
 - `purchase_order_id` nullable FK -> `purchase_orders.id`
 - `supplier_id` FK -> `suppliers.id`
 - `stock_in_pic_id` FK -> `users.id`

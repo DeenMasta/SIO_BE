@@ -60,7 +60,6 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::get('serials', [SearchController::class, 'serials']);
         Route::get('invoices', [SearchController::class, 'invoices']);
         Route::get('purchase-orders', [SearchController::class, 'purchaseOrders']);
-        Route::get('delivery-orders', [SearchController::class, 'deliveryOrders']);
     });
 
     Route::get('dashboard/summary', [DashboardController::class, 'index'])->middleware('can:access-staff');

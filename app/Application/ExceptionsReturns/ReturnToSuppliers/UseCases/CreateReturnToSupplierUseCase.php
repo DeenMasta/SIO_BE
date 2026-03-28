@@ -5,7 +5,6 @@ namespace App\Application\ExceptionsReturns\ReturnToSuppliers\UseCases;
 use App\Application\Contracts\Repositories\ReturnToSupplierRepository;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
-use App\Application\Support\StockBalanceService;
 use App\Domain\ExceptionsReturns\Enums\ExceptionTransactionStatus;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
@@ -21,7 +20,6 @@ class CreateReturnToSupplierUseCase implements UseCase
     public function __construct(
         private readonly ReturnToSupplierRepository $returns,
         private readonly AuditLogger $auditLogger,
-        private readonly StockBalanceService $stockBalances,
     )
     {
     }
@@ -82,8 +80,6 @@ class CreateReturnToSupplierUseCase implements UseCase
                         'remarks' => $line['remarks'] ?? null,
                     ]);
 
-                    $this->stockBalances->transferStatus($stockItem->product_id, StockItemStatus::Received, StockItemStatus::ReturnedToSupplier, 1);
-
                     continue;
                 }
 
@@ -100,7 +96,6 @@ class CreateReturnToSupplierUseCase implements UseCase
                     'remarks' => $line['remarks'] ?? null,
                 ]);
 
-                $this->stockBalances->transferStatus((int) $line['product_id'], StockItemStatus::Received, StockItemStatus::ReturnedToSupplier, (int) $line['qty']);
             }
 
             $result = $return->fresh('lines');

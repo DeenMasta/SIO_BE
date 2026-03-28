@@ -166,7 +166,6 @@ class RemainingWorkCompletionTest extends TestCase
             'stock_in_number' => 'SIN-SRCH-100001',
             'stock_in_date' => now()->toDateString(),
             'supplier_id' => $supplier->id,
-            'delivery_order_number' => 'DO-SRCH-100001',
             'lines' => [
                 [
                     'product_id' => $product->id,
@@ -227,7 +226,6 @@ class RemainingWorkCompletionTest extends TestCase
         $this->getJson('/api/search/serials?query=SER-SRCH&per_page=10')->assertOk()->assertJsonPath('meta.pagination.total', 1);
         $this->getJson('/api/search/invoices?query=INV-SRCH&per_page=10')->assertOk()->assertJsonPath('meta.pagination.total', 1);
         $this->getJson('/api/search/purchase-orders?query=PO-SRCH&per_page=10')->assertOk()->assertJsonPath('meta.pagination.total', 1);
-        $this->getJson('/api/search/delivery-orders?query=DO-SRCH&per_page=10')->assertOk()->assertJsonPath('meta.pagination.total', 1);
 
         $this->assertNotNull($purchaseOrder->json('data.id'));
     }

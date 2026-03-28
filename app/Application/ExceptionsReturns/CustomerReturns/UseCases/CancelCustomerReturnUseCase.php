@@ -5,7 +5,6 @@ namespace App\Application\ExceptionsReturns\CustomerReturns\UseCases;
 use App\Application\Contracts\Repositories\CustomerReturnRepository;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
-use App\Application\Support\StockBalanceService;
 use App\Domain\ExceptionsReturns\Enums\CustomerReturnNextAction;
 use App\Domain\ExceptionsReturns\Enums\ExceptionTransactionStatus;
 use App\Domain\InventoryCore\Enums\MovementType;
@@ -22,7 +21,6 @@ class CancelCustomerReturnUseCase implements UseCase
     public function __construct(
         private readonly CustomerReturnRepository $returns,
         private readonly AuditLogger $auditLogger,
-        private readonly StockBalanceService $stockBalances,
     ) {
     }
 
@@ -66,8 +64,6 @@ class CancelCustomerReturnUseCase implements UseCase
                         'remarks' => $data['remarks'] ?? 'Customer return cancelled',
                     ]);
 
-                    $this->stockBalances->transferStatus((int) $line->product_id, $fromStatus, StockItemStatus::Delivered, 1);
-
                     continue;
                 }
 
@@ -86,7 +82,6 @@ class CancelCustomerReturnUseCase implements UseCase
                     'remarks' => $data['remarks'] ?? 'Customer return cancelled',
                 ]);
 
-                $this->stockBalances->transferStatus((int) $line->product_id, $fromStatus, StockItemStatus::Delivered, (int) $line->qty);
             }
 
             $return->status = ExceptionTransactionStatus::Cancelled;

@@ -5,7 +5,6 @@ namespace App\Application\QcOutbound\QcTransactions\UseCases;
 use App\Application\Contracts\Repositories\QcTransactionRepository;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
-use App\Application\Support\StockBalanceService;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
 use App\Domain\MasterData\Enums\ProductType;
@@ -25,7 +24,6 @@ class PostQcTransactionUseCase implements UseCase
     public function __construct(
         private readonly QcTransactionRepository $qcTransactions,
         private readonly AuditLogger $auditLogger,
-        private readonly StockBalanceService $stockBalances,
     )
     {
     }
@@ -108,9 +106,6 @@ class PostQcTransactionUseCase implements UseCase
                             'remarks' => $line['remarks'] ?? null,
                         ]);
 
-                        if ($result === QcResult::Pass) {
-                            $this->stockBalances->transferStatus($product->id, StockItemStatus::Received, StockItemStatus::InStock, 1);
-                        }
                     }
 
                     continue;
@@ -150,17 +145,14 @@ class PostQcTransactionUseCase implements UseCase
                     'reference_id' => (int) $qcLine->id,
                     'qty_in' => $qtyPass,
                     'qty_out' => $qtyFail,
+                    'from_status' => StockItemStatus::Received->value,
+                    'to_status' => $result === QcResult::Pass
+                        ? StockItemStatus::InStock->value
+                        : StockItemStatus::Returned->value,
                     'performed_by' => (int) $data['qc_by'],
                     'remarks' => $line['remarks'] ?? null,
                 ]);
 
-                if ($qtyPass > 0) {
-                    $this->stockBalances->transferStatus($product->id, StockItemStatus::Received, StockItemStatus::InStock, $qtyPass);
-                }
-
-                if ($qtyFail > 0) {
-                    $this->stockBalances->decrementStatus($product->id, StockItemStatus::Received, $qtyFail);
-                }
             }
 
             $result = $qcTransaction->fresh('lines');

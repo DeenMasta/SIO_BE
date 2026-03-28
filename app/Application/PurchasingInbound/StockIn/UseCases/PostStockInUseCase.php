@@ -5,7 +5,6 @@ namespace App\Application\PurchasingInbound\StockIn\UseCases;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\SerialNumberGenerator;
-use App\Application\Support\StockBalanceService;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\SerialSource;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
@@ -29,7 +28,6 @@ class PostStockInUseCase implements UseCase
     public function __construct(
         private readonly SerialNumberGenerator $serialNumberGenerator,
         private readonly AuditLogger $auditLogger,
-        private readonly StockBalanceService $stockBalances,
     )
     {
     }
@@ -52,7 +50,7 @@ class PostStockInUseCase implements UseCase
 
                 if ($purchaseOrder->status !== PurchaseOrderStatus::Issued) {
                     throw ValidationException::withMessages([
-                        'purchase_order_id' => ['Stock in can only be posted to an issued purchase order.'],
+                        'purchase_order_id' => ['Stock in can only be received from an issued purchase order.'],
                     ]);
                 }
 
@@ -64,12 +62,11 @@ class PostStockInUseCase implements UseCase
             $stockIn = StockIn::query()->create([
                 'stock_in_number' => $data['stock_in_number'],
                 'stock_in_date' => $data['stock_in_date'],
-                'delivery_order_number' => $data['delivery_order_number'] ?? null,
                 'purchase_order_id' => $purchaseOrderId,
                 'supplier_id' => $data['supplier_id'],
                 'stock_in_pic_id' => $data['stock_in_pic_id'],
                 'qc_person_id' => $data['qc_person_id'] ?? null,
-                'status' => StockInStatus::Posted,
+                'status' => StockInStatus::Received,
                 'remarks' => $data['remarks'] ?? null,
             ]);
 
@@ -146,7 +143,6 @@ class PostStockInUseCase implements UseCase
                             'remarks' => $itemRemarks,
                         ]);
 
-                        $this->stockBalances->incrementStatus($product->id, StockItemStatus::Received, 1);
                     }
 
                     continue;
@@ -192,7 +188,6 @@ class PostStockInUseCase implements UseCase
                             'remarks' => $itemRemarks,
                         ]);
 
-                        $this->stockBalances->incrementStatus($product->id, StockItemStatus::Received, 1);
                     }
 
                     continue;
@@ -207,11 +202,10 @@ class PostStockInUseCase implements UseCase
                     'reference_id' => $stockInLine->id,
                     'qty_in' => $receivedQty,
                     'qty_out' => 0,
+                    'to_status' => StockItemStatus::Received->value,
                     'performed_by' => (int) $data['stock_in_pic_id'],
                     'remarks' => $line['remarks'] ?? null,
                 ]);
-
-                $this->stockBalances->incrementStatus($product->id, StockItemStatus::Received, $receivedQty);
 
             }
 

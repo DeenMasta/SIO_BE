@@ -5,7 +5,6 @@ namespace App\Application\QcOutbound\StockOut\UseCases;
 use App\Application\Contracts\Repositories\StockOutRepository;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
-use App\Application\Support\StockBalanceService;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
 use App\Domain\MasterData\Enums\ProductType;
@@ -25,7 +24,6 @@ class PostStockOutUseCase implements UseCase
     public function __construct(
         private readonly StockOutRepository $stockOuts,
         private readonly AuditLogger $auditLogger,
-        private readonly StockBalanceService $stockBalances,
     )
     {
     }
@@ -132,18 +130,23 @@ class PostStockOutUseCase implements UseCase
                             'remarks' => $line['remarks'] ?? null,
                         ]);
 
-                        $this->stockBalances->transferStatus($product->id, StockItemStatus::InStock, StockItemStatus::Delivered, 1);
                     }
 
                     continue;
                 }
 
-                $stockBalance = DB::table('stock_balances')
+                $movementTotals = StockMovement::query()
                     ->where('product_id', $product->id)
+                    ->whereNull('stock_item_id')
+                    ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'IN_STOCK' THEN qty_in ELSE 0 END), 0) as qty_in_stock_in")
+                    ->selectRaw("COALESCE(SUM(CASE WHEN from_status = 'IN_STOCK' THEN qty_out ELSE 0 END), 0) as qty_in_stock_out")
                     ->lockForUpdate()
                     ->first();
 
-                $availableQty = (int) ($stockBalance->qty_in_stock ?? 0);
+                $availableQty = max(
+                    (int) ($movementTotals->qty_in_stock_in ?? 0) - (int) ($movementTotals->qty_in_stock_out ?? 0),
+                    0,
+                );
                 if ($availableQty < $qty) {
                     throw ValidationException::withMessages([
                         'lines' => [sprintf('Insufficient stock for product %s. Available: %d, requested: %d.', $product->product_code, $availableQty, $qty)],
@@ -159,11 +162,12 @@ class PostStockOutUseCase implements UseCase
                     'reference_id' => (int) $stockOutLine->id,
                     'qty_in' => 0,
                     'qty_out' => $qty,
+                    'from_status' => StockItemStatus::InStock->value,
+                    'to_status' => StockItemStatus::Delivered->value,
                     'performed_by' => (int) $data['pic_id'],
                     'remarks' => $line['remarks'] ?? null,
                 ]);
 
-                $this->stockBalances->transferStatus($product->id, StockItemStatus::InStock, StockItemStatus::Delivered, $qty);
             }
 
                 $result = [

@@ -5,7 +5,6 @@ namespace App\Application\ExceptionsReturns\Repairs\UseCases;
 use App\Application\Contracts\Repositories\RepairRepository;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
-use App\Application\Support\StockBalanceService;
 use App\Domain\ExceptionsReturns\Enums\RepairStatus;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
@@ -21,7 +20,6 @@ class CreateRepairUseCase implements UseCase
     public function __construct(
         private readonly RepairRepository $repairs,
         private readonly AuditLogger $auditLogger,
-        private readonly StockBalanceService $stockBalances,
     )
     {
     }
@@ -72,8 +70,6 @@ class CreateRepairUseCase implements UseCase
                 'performed_by' => (int) $data['created_by'],
                 'remarks' => $data['remarks'] ?? null,
             ]);
-
-            $this->stockBalances->transferStatus($stockItem->product_id, $fromStatus, StockItemStatus::UnderRepair, 1);
 
             $this->auditLogger->log(
                 userId: (int) $data['created_by'],

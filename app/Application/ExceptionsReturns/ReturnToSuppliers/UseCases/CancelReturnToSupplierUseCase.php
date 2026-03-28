@@ -5,7 +5,6 @@ namespace App\Application\ExceptionsReturns\ReturnToSuppliers\UseCases;
 use App\Application\Contracts\Repositories\ReturnToSupplierRepository;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
-use App\Application\Support\StockBalanceService;
 use App\Domain\ExceptionsReturns\Enums\ExceptionTransactionStatus;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
@@ -21,7 +20,6 @@ class CancelReturnToSupplierUseCase implements UseCase
     public function __construct(
         private readonly ReturnToSupplierRepository $returns,
         private readonly AuditLogger $auditLogger,
-        private readonly StockBalanceService $stockBalances,
     ) {
     }
 
@@ -63,8 +61,6 @@ class CancelReturnToSupplierUseCase implements UseCase
                         'remarks' => $data['remarks'] ?? 'Return to supplier cancelled',
                     ]);
 
-                    $this->stockBalances->transferStatus((int) $line->product_id, StockItemStatus::ReturnedToSupplier, StockItemStatus::Received, 1);
-
                     continue;
                 }
 
@@ -83,7 +79,6 @@ class CancelReturnToSupplierUseCase implements UseCase
                     'remarks' => $data['remarks'] ?? 'Return to supplier cancelled',
                 ]);
 
-                $this->stockBalances->transferStatus((int) $line->product_id, StockItemStatus::ReturnedToSupplier, StockItemStatus::Received, (int) $line->qty);
             }
 
             $return->status = ExceptionTransactionStatus::Cancelled;

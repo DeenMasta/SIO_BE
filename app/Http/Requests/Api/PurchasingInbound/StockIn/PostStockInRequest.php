@@ -21,7 +21,6 @@ class PostStockInRequest extends StrictFormRequest
         return [
             'stock_in_number' => ['nullable', 'string', 'max:50', 'alpha_dash', 'unique:stock_in,stock_in_number'],
             'stock_in_date' => ['required', 'date'],
-            'delivery_order_number' => ['nullable', 'string', 'max:50'],
             'purchase_order_id' => ['nullable', 'integer', 'exists:purchase_orders,id'],
             'supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
             'qc_person_id' => ['nullable', 'integer', 'exists:users,id'],
@@ -85,9 +84,6 @@ class PostStockInRequest extends StrictFormRequest
 
         $this->merge([
             'stock_in_number' => $stockInNumber !== '' ? $stockInNumber : null,
-            'delivery_order_number' => $this->has('delivery_order_number')
-                ? trim((string) $this->input('delivery_order_number'))
-                : null,
             'lines' => $lines,
         ]);
     }
@@ -163,7 +159,6 @@ class PostStockInRequest extends StrictFormRequest
         return [
             'stock_in_number',
             'stock_in_date',
-            'delivery_order_number',
             'purchase_order_id',
             'supplier_id',
             'qc_person_id',

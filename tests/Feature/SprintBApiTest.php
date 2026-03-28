@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
-use App\Models\StockBalance;
+use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -25,32 +25,41 @@ class SprintBApiTest extends TestCase
         $p2 = Product::factory()->create(['reorder_level' => 20, 'product_type' => 'CONSUMABLE']);
         $p3 = Product::factory()->create(['reorder_level' => 5, 'product_type' => 'CONSUMABLE']);
 
-        StockBalance::query()->create([
+        StockMovement::query()->create([
+            'movement_datetime' => now(),
             'product_id' => $p1->id,
-            'qty_received_pending_qc' => 0,
-            'qty_in_stock' => 4,
-            'qty_delivered' => 0,
-            'qty_under_repair' => 0,
-            'qty_returned' => 0,
-            'qty_returned_to_supplier' => 0,
+            'stock_item_id' => null,
+            'movement_type' => 'STOCK_IN',
+            'reference_table' => 'test_seed',
+            'reference_id' => 1,
+            'qty_in' => 4,
+            'qty_out' => 0,
+            'to_status' => 'IN_STOCK',
+            'performed_by' => $admin->id,
         ]);
-        StockBalance::query()->create([
+        StockMovement::query()->create([
+            'movement_datetime' => now(),
             'product_id' => $p2->id,
-            'qty_received_pending_qc' => 0,
-            'qty_in_stock' => 3,
-            'qty_delivered' => 0,
-            'qty_under_repair' => 0,
-            'qty_returned' => 0,
-            'qty_returned_to_supplier' => 0,
+            'stock_item_id' => null,
+            'movement_type' => 'STOCK_IN',
+            'reference_table' => 'test_seed',
+            'reference_id' => 2,
+            'qty_in' => 3,
+            'qty_out' => 0,
+            'to_status' => 'IN_STOCK',
+            'performed_by' => $admin->id,
         ]);
-        StockBalance::query()->create([
+        StockMovement::query()->create([
+            'movement_datetime' => now(),
             'product_id' => $p3->id,
-            'qty_received_pending_qc' => 0,
-            'qty_in_stock' => 6,
-            'qty_delivered' => 0,
-            'qty_under_repair' => 0,
-            'qty_returned' => 0,
-            'qty_returned_to_supplier' => 0,
+            'stock_item_id' => null,
+            'movement_type' => 'STOCK_IN',
+            'reference_table' => 'test_seed',
+            'reference_id' => 3,
+            'qty_in' => 6,
+            'qty_out' => 0,
+            'to_status' => 'IN_STOCK',
+            'performed_by' => $admin->id,
         ]);
 
         Sanctum::actingAs($staff, ['staff-access']);
@@ -89,7 +98,7 @@ class SprintBApiTest extends TestCase
             'created_by' => $admin->id,
         ]);
 
-        $this->postJson('/api/stock-ins', [
+        $stockInResponse = $this->postJson('/api/stock-ins', [
             'stock_in_number' => 'SIN-SPB-100001',
             'stock_in_date' => now()->toDateString(),
             'supplier_id' => $supplier->id,
@@ -101,7 +110,23 @@ class SprintBApiTest extends TestCase
             ],
         ])->assertCreated();
 
-        StockBalance::query()->where('product_id', $product->id)->update(['qty_in_stock' => 5, 'qty_received_pending_qc' => 0]);
+        $stockInId = (int) $stockInResponse->json('data.id');
+        $stockInLineId = (int) $stockInResponse->json('data.lines.0.id');
+
+        $this->postJson('/api/qc-transactions', [
+            'qc_reference_number' => 'QC-SPB-100000',
+            'stock_in_id' => $stockInId,
+            'qc_date' => now()->toDateString(),
+            'lines' => [
+                [
+                    'stock_in_line_id' => $stockInLineId,
+                    'product_id' => $product->id,
+                    'qc_result' => 'PASS',
+                    'qty_pass' => 5,
+                    'qty_fail' => 0,
+                ],
+            ],
+        ])->assertCreated();
 
         $this->postJson('/api/stock-outs', [
             'stock_out_number' => 'SOUT-SPB-100001',
@@ -139,14 +164,17 @@ class SprintBApiTest extends TestCase
         $customer = Customer::factory()->create();
         $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
 
-        StockBalance::query()->create([
+        StockMovement::query()->create([
+            'movement_datetime' => now(),
             'product_id' => $product->id,
-            'qty_received_pending_qc' => 0,
-            'qty_in_stock' => 1,
-            'qty_delivered' => 0,
-            'qty_under_repair' => 0,
-            'qty_returned' => 0,
-            'qty_returned_to_supplier' => 0,
+            'stock_item_id' => null,
+            'movement_type' => 'STOCK_IN',
+            'reference_table' => 'test_seed',
+            'reference_id' => 10,
+            'qty_in' => 1,
+            'qty_out' => 0,
+            'to_status' => 'IN_STOCK',
+            'performed_by' => $admin->id,
         ]);
 
         Sanctum::actingAs($admin, ['admin-access']);
@@ -165,9 +193,10 @@ class SprintBApiTest extends TestCase
             ],
         ])->assertUnprocessable();
 
-        $this->assertDatabaseHas('stock_balances', [
+        $this->assertDatabaseHas('stock_movements', [
             'product_id' => $product->id,
-            'qty_in_stock' => 1,
+            'movement_type' => 'STOCK_IN',
+            'qty_in' => 1,
         ]);
     }
 
@@ -199,7 +228,6 @@ class SprintBApiTest extends TestCase
         $stockIn = $this->postJson('/api/stock-ins', [
             'stock_in_number' => 'SIN-SPB-100003',
             'stock_in_date' => now()->toDateString(),
-            'delivery_order_number' => 'DO-SPB-100003',
             'purchase_order_id' => $poId,
             'supplier_id' => $supplier->id,
             'lines' => [[
@@ -254,7 +282,7 @@ class SprintBApiTest extends TestCase
         $this->getJson('/api/reports/purchase-orders/summary?po_number=PO-SPB')->assertOk();
         $this->getJson('/api/reports/purchase-orders/open')->assertOk();
         $this->getJson('/api/reports/purchase-orders/aging')->assertOk();
-        $this->getJson('/api/reports/stock-in/by-supplier-do?supplier_id='.$supplier->id.'&delivery_order_number=DO-SPB')->assertOk();
+        $this->getJson('/api/reports/stock-in/by-supplier-do?supplier_id='.$supplier->id)->assertOk();
         $this->getJson('/api/reports/qc/pass-fail')->assertOk();
         $this->getJson('/api/reports/stock-out/by-invoice-customer?customer_id='.$customer->id.'&invoice_number=INV-SPB')->assertOk();
         $this->getJson('/api/reports/repairs/summary')->assertOk();

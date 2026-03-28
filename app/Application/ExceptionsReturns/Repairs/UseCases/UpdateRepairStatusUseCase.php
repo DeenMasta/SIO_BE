@@ -5,7 +5,6 @@ namespace App\Application\ExceptionsReturns\Repairs\UseCases;
 use App\Application\Contracts\Repositories\RepairRepository;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
-use App\Application\Support\StockBalanceService;
 use App\Domain\ExceptionsReturns\Enums\RepairStatus;
 use App\Domain\ExceptionsReturns\Services\RepairStateMachine;
 use App\Domain\InventoryCore\Enums\MovementType;
@@ -22,7 +21,6 @@ class UpdateRepairStatusUseCase implements UseCase
     public function __construct(
         private readonly RepairRepository $repairs,
         private readonly AuditLogger $auditLogger,
-        private readonly StockBalanceService $stockBalances,
     )
     {
     }
@@ -104,7 +102,6 @@ class UpdateRepairStatusUseCase implements UseCase
             'remarks' => $data['remarks'] ?? null,
         ]);
 
-        $this->stockBalances->transferStatus($stockItem->product_id, StockItemStatus::UnderRepair, StockItemStatus::InStock, 1);
     }
 
     /**
@@ -134,6 +131,5 @@ class UpdateRepairStatusUseCase implements UseCase
             'remarks' => $data['remarks'] ?? 'Repair cancelled',
         ]);
 
-        $this->stockBalances->transferStatus($stockItem->product_id, StockItemStatus::UnderRepair, StockItemStatus::InStock, 1);
     }
 }

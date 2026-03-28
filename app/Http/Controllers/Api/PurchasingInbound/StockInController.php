@@ -58,7 +58,7 @@ class StockInController extends Controller
 
         $stockIn = $this->postStockIn->execute($payload);
 
-        return ApiResponse::success(new StockInResource($stockIn), 'Stock in posted successfully.', 201);
+        return ApiResponse::success(new StockInResource($stockIn), 'Stock in received successfully.', 201);
     }
 
     public function show(int $id): JsonResponse

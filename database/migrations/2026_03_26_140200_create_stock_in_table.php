@@ -15,12 +15,11 @@ return new class extends Migration
             $table->id();
             $table->string('stock_in_number', 50)->unique();
             $table->date('stock_in_date');
-            $table->string('delivery_order_number', 50)->nullable();
             $table->foreignId('purchase_order_id')->nullable()->constrained('purchase_orders')->nullOnDelete();
             $table->foreignId('supplier_id')->constrained('suppliers')->restrictOnDelete();
             $table->foreignId('stock_in_pic_id')->constrained('users')->restrictOnDelete();
             $table->foreignId('qc_person_id')->nullable()->constrained('users')->nullOnDelete();
-            $table->string('status', 20)->default('DRAFT');
+            $table->string('status', 20)->default('RECEIVED');
             $table->text('remarks')->nullable();
             $table->timestamps();
 

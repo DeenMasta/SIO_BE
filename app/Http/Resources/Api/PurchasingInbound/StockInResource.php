@@ -16,12 +16,13 @@ class StockInResource extends JsonResource
             'id' => $this->id,
             'stock_in_number' => $this->stock_in_number,
             'stock_in_date' => $this->stock_in_date,
-            'delivery_order_number' => $this->delivery_order_number,
             'purchase_order_id' => $this->purchase_order_id,
             'supplier_id' => $this->supplier_id,
             'stock_in_pic_id' => $this->stock_in_pic_id,
             'qc_person_id' => $this->qc_person_id,
-            'status' => $this->status?->value,
+            'status' => $this->status?->value === 'POSTED'
+                ? 'RECEIVED'
+                : $this->status?->value,
             'remarks' => $this->remarks,
             'lines' => $this->lines->map(fn ($line): array => [
                 'id' => $line->id,

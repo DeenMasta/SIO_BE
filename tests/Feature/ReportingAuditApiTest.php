@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\AuditLog;
 use App\Models\Product;
-use App\Models\StockBalance;
 use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -35,12 +34,6 @@ class ReportingAuditApiTest extends TestCase
             ],
         ])->assertCreated();
 
-        $this->assertDatabaseHas('stock_balances', [
-            'product_id' => $product->id,
-            'qty_received_pending_qc' => 2,
-            'qty_in_stock' => 0,
-        ]);
-
         $stockInId = (int) $stockInResponse->json('data.id');
         $stockInLineId = (int) $stockInResponse->json('data.lines.0.id');
 
@@ -58,12 +51,6 @@ class ReportingAuditApiTest extends TestCase
                 ],
             ],
         ])->assertCreated();
-
-        $this->assertDatabaseHas('stock_balances', [
-            'product_id' => $product->id,
-            'qty_received_pending_qc' => 0,
-            'qty_in_stock' => 2,
-        ]);
 
         Sanctum::actingAs($staff, ['staff-access']);
 
@@ -178,6 +165,9 @@ class ReportingAuditApiTest extends TestCase
         $auditExport->assertHeader('content-type', 'text/csv; charset=UTF-8');
         $this->assertStringContainsString('module_name', $auditExport->streamedContent());
 
-        $this->assertNotNull(StockBalance::query()->where('product_id', $product->id)->first());
+        $this->assertDatabaseHas('stock_movements', [
+            'product_id' => $product->id,
+            'movement_type' => 'STOCK_IN',
+        ]);
     }
 }
