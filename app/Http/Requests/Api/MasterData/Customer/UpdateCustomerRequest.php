@@ -23,7 +23,6 @@ class UpdateCustomerRequest extends StrictFormRequest
         $customer = $this->route('customer');
 
         return [
-            'customer_code' => ['sometimes', 'required', 'string', 'max:50', 'alpha_dash', Rule::unique('customers', 'customer_code')->ignore($customer->id)],
             'customer_name' => ['sometimes', 'required', 'string', 'max:150'],
             'contact_person' => ['sometimes', 'nullable', 'string', 'max:120'],
             'phone' => ['sometimes', 'nullable', 'string', 'max:30'],
@@ -37,7 +36,6 @@ class UpdateCustomerRequest extends StrictFormRequest
     protected function allowedFields(): array
     {
         return [
-            'customer_code',
             'customer_name',
             'contact_person',
             'phone',

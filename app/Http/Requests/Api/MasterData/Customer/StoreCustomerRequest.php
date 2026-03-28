@@ -19,7 +19,6 @@ class StoreCustomerRequest extends StrictFormRequest
     public function rules(): array
     {
         return [
-            'customer_code' => ['required', 'string', 'max:50', 'alpha_dash', 'unique:customers,customer_code'],
             'customer_name' => ['required', 'string', 'max:150'],
             'contact_person' => ['nullable', 'string', 'max:120'],
             'phone' => ['nullable', 'string', 'max:30'],
@@ -33,7 +32,6 @@ class StoreCustomerRequest extends StrictFormRequest
     protected function allowedFields(): array
     {
         return [
-            'customer_code',
             'customer_name',
             'contact_person',
             'phone',

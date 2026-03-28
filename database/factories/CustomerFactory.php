@@ -18,7 +18,6 @@ class CustomerFactory extends Factory
     public function definition(): array
     {
         return [
-            'customer_code' => strtoupper(fake()->bothify('CUS-####')),
             'customer_name' => fake()->company(),
             'contact_person' => fake()->name(),
             'phone' => fake()->phoneNumber(),

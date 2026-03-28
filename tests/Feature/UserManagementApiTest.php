@@ -11,6 +11,11 @@ class UserManagementApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_unauthenticated_request_to_user_management_is_rejected(): void
+    {
+        $this->getJson('/api/users')->assertUnauthorized();
+    }
+
     public function test_admin_can_list_create_update_and_toggle_user_status(): void
     {
         $admin = User::factory()->admin()->create();
@@ -78,5 +83,75 @@ class UserManagementApiTest extends TestCase
         ])->assertForbidden();
 
         $this->patchJson('/api/users/'.$target->id.'/deactivate')->assertForbidden();
+    }
+
+    public function test_admin_can_filter_users_by_role_status_and_search_query(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        User::factory()->create([
+            'name' => 'Alice Active Staff',
+            'email' => 'alice.staff@example.com',
+            'role' => 'staff',
+            'status' => 'active',
+        ]);
+        User::factory()->create([
+            'name' => 'Bob Inactive Staff',
+            'email' => 'bob.staff@example.com',
+            'role' => 'staff',
+            'status' => 'inactive',
+        ]);
+        User::factory()->create([
+            'name' => 'Charlie Active Admin',
+            'email' => 'charlie.admin@example.com',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->getJson('/api/users?role=staff&status=active&q=alice')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.name', 'Alice Active Staff')
+            ->assertJsonPath('data.0.role', 'staff')
+            ->assertJsonPath('data.0.status', 'active');
+    }
+
+    public function test_admin_cannot_deactivate_their_own_current_session_account(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->patchJson('/api/users/'.$admin->id.'/deactivate')
+            ->assertUnprocessable()
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'You cannot deactivate your current session account.');
+
+        $this->assertDatabaseHas('users', [
+            'id' => $admin->id,
+            'status' => 'active',
+        ]);
+    }
+
+    public function test_user_create_rejects_unknown_fields_and_duplicate_email(): void
+    {
+        $admin = User::factory()->admin()->create();
+        User::factory()->create(['email' => 'ops.staff@example.com']);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->postJson('/api/users', [
+            'name' => 'Ops Staff',
+            'email' => 'ops.staff@example.com',
+            'password' => 'password123',
+            'role' => 'staff',
+            'status' => 'active',
+            'illegal_field' => 'not-allowed',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('status', 'error')
+            ->assertJsonStructure(['errors']);
     }
 }

@@ -13,6 +13,7 @@ use App\Application\Contracts\Repositories\ReturnToSupplierRepository;
 use App\Application\Contracts\Repositories\StockInRepository;
 use App\Application\Contracts\Repositories\StockOutRepository;
 use App\Application\Contracts\Repositories\SupplierRepository;
+use App\Application\Contracts\Repositories\UserRepository;
 use App\Domain\IdentityAccess\Enums\UserRole;
 use App\Models\Customer;
 use App\Models\CustomerReturn;
@@ -47,6 +48,7 @@ use App\Infrastructure\Persistence\Eloquent\Repositories\EloquentReturnToSupplie
 use App\Infrastructure\Persistence\Eloquent\Repositories\EloquentStockInRepository;
 use App\Infrastructure\Persistence\Eloquent\Repositories\EloquentStockOutRepository;
 use App\Infrastructure\Persistence\Eloquent\Repositories\EloquentSupplierRepository;
+use App\Infrastructure\Persistence\Eloquent\Repositories\EloquentUserRepository;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -71,6 +73,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(RepairRepository::class, EloquentRepairRepository::class);
         $this->app->bind(ReturnToSupplierRepository::class, EloquentReturnToSupplierRepository::class);
         $this->app->bind(CustomerReturnRepository::class, EloquentCustomerReturnRepository::class);
+        $this->app->bind(UserRepository::class, EloquentUserRepository::class);
     }
 
     /**

@@ -190,7 +190,6 @@ class MasterDataApiTest extends TestCase
         Sanctum::actingAs($admin, ['admin-access']);
 
         $created = $this->postJson('/api/customers', [
-            'customer_code' => 'CUS-1001',
             'customer_name' => 'CV Mitra Retail',
             'contact_person' => 'Rudi',
             'phone' => '08111111111',

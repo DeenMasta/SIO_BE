@@ -117,9 +117,9 @@ Key data fields:
 - created by
 - remarks
 - item details per line
-  - product
-  - quantity
-  - subtotal
+    - product
+    - quantity
+    - subtotal
 
 Suggested PO statuses:
 
@@ -401,7 +401,6 @@ Fields:
 
 Fields:
 
-- customer code
 - customer name
 - contact person
 - phone
@@ -424,7 +423,7 @@ Fields:
 
 For devices that already have manufacturer serial number:
 
-- store as **factory\_serial\_number**
+- store as **factory_serial_number**
 - must be unique when present
 
 ### 6.3 Internal Serial Number Generation
@@ -447,9 +446,9 @@ Generation rule:
 
 Suggested fields:
 
-- serial\_number
-- factory\_serial\_number (nullable for devices only)
-- serial\_source = factory / generated
+- serial_number
+- factory_serial_number (nullable for devices only)
+- serial_source = factory / generated
 
 ### 6.4 Uniqueness Rules
 
@@ -587,30 +586,30 @@ Main entities for database design:
 - products
 - suppliers
 - customers
-- purchase\_orders
-- purchase\_order\_details
-- stock\_items
-- stock\_balances
-- stock\_in
-- stock\_in\_details
-- qc\_transactions
-- qc\_transaction\_details
-- stock\_out
-- stock\_out\_details
+- purchase_orders
+- purchase_order_details
+- stock_items
+- stock_balances
+- stock_in
+- stock_in_details
+- qc_transactions
+- qc_transaction_details
+- stock_out
+- stock_out_details
 - repairs
-- return\_to\_supplier
-- customer\_returns
-- stock\_movements
-- audit\_logs
+- return_to_supplier
+- customer_returns
+- stock_movements
+- audit_logs
 
 ### Important Notes on Data Modeling
 
 - **products** stores product master information
-- **stock\_items** stores unit-level records for serialized items
-- **stock\_balances** stores quantity totals by product
-- **stock\_movements** is the central ledger of all inventory transactions
-- **stock\_in\_details** and **stock\_out\_details** should reference products and stock item units where necessary
-- **customer\_returns** must link back to original stock out history
+- **stock_items** stores unit-level records for serialized items
+- **stock_balances** stores quantity totals by product
+- **stock_movements** is the central ledger of all inventory transactions
+- **stock_in_details** and **stock_out_details** should reference products and stock item units where necessary
+- **customer_returns** must link back to original stock out history
 
 ---
 
@@ -859,4 +858,3 @@ The most important design principles are:
 - customer return creates **Returned** status
 
 This makes the system reliable for stock control, customer fulfillment, audit monitoring, repair tracking, and supplier return handling.
-

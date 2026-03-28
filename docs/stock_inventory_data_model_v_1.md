@@ -5,8 +5,8 @@
 This model is designed around these rules:
 
 1. Use a **header + detail pattern** for business transactions.
-   - Example: `purchase_orders` + `purchase_order_lines`
-   - Example: `stock_in` + `stock_in_lines`
+    - Example: `purchase_orders` + `purchase_order_lines`
+    - Example: `stock_in` + `stock_in_lines`
 2. Use **unit-level tracking** for serialized products.
 3. Use a **stock balance summary table** for fast inventory lookup.
 4. Use a **central stock movement ledger** for end-to-end traceability.
@@ -18,12 +18,14 @@ This model is designed around these rules:
 ## A. Security and administration
 
 ### `roles`
+
 - `id` PK
 - `code` unique (`ADMIN`, `STAFF`)
 - `name`
 - `description`
 
 ### `users`
+
 - `id` PK
 - `role_id` FK -> `roles.id`
 - `full_name`
@@ -39,6 +41,7 @@ This model is designed around these rules:
 ## B. Master data
 
 ### `products`
+
 - `id` PK
 - `product_code` unique
 - `product_name`
@@ -53,6 +56,7 @@ This model is designed around these rules:
 - `updated_at`
 
 ### `suppliers`
+
 - `id` PK
 - `supplier_code` unique
 - `supplier_name`
@@ -66,8 +70,8 @@ This model is designed around these rules:
 - `updated_at`
 
 ### `customers`
+
 - `id` PK
-- `customer_code` unique
 - `customer_name`
 - `contact_person`
 - `phone`
@@ -83,6 +87,7 @@ This model is designed around these rules:
 ## C. Purchase order
 
 ### `purchase_orders`
+
 - `id` PK
 - `po_number` unique
 - `po_date`
@@ -95,6 +100,7 @@ This model is designed around these rules:
 - `updated_at`
 
 ### `purchase_order_lines`
+
 - `id` PK
 - `purchase_order_id` FK -> `purchase_orders.id`
 - `product_id` FK -> `products.id`
@@ -108,6 +114,7 @@ This model is designed around these rules:
 ## D. Stock receiving
 
 ### `stock_in`
+
 - `id` PK
 - `stock_in_number` unique
 - `stock_in_date`
@@ -122,6 +129,7 @@ This model is designed around these rules:
 - `updated_at`
 
 ### `stock_in_lines`
+
 - `id` PK
 - `stock_in_id` FK -> `stock_in.id`
 - `product_id` FK -> `products.id`
@@ -134,6 +142,7 @@ This model is designed around these rules:
 ## E. Serialized unit records
 
 ### `stock_items`
+
 Use this table only for **devices** and **accessories**.
 
 - `id` PK
@@ -152,6 +161,7 @@ Use this table only for **devices** and **accessories**.
 ## F. Stock balances
 
 ### `stock_balances`
+
 Fast summary table by product.
 
 - `id` PK
@@ -169,6 +179,7 @@ Fast summary table by product.
 ## G. QC
 
 ### `qc_transactions`
+
 - `id` PK
 - `qc_reference_number` unique
 - `stock_in_id` FK -> `stock_in.id`
@@ -179,6 +190,7 @@ Fast summary table by product.
 - `created_at`
 
 ### `qc_transaction_lines`
+
 - `id` PK
 - `qc_transaction_id` FK -> `qc_transactions.id`
 - `stock_in_line_id` FK -> `stock_in_lines.id`
@@ -194,6 +206,7 @@ Fast summary table by product.
 ## H. Stock out
 
 ### `stock_out`
+
 - `id` PK
 - `stock_out_number` unique
 - `stock_out_date`
@@ -207,6 +220,7 @@ Fast summary table by product.
 - `created_at`
 
 ### `stock_out_lines`
+
 - `id` PK
 - `stock_out_id` FK -> `stock_out.id`
 - `product_id` FK -> `products.id`
@@ -214,6 +228,7 @@ Fast summary table by product.
 - `remarks`
 
 ### `stock_out_line_items`
+
 Bridge table for serialized units.
 
 - `id` PK
@@ -225,6 +240,7 @@ Bridge table for serialized units.
 ## I. Repair
 
 ### `repairs`
+
 - `id` PK
 - `repair_transaction_number` unique
 - `repair_date`
@@ -237,7 +253,8 @@ Bridge table for serialized units.
 - `created_at`
 - `updated_at`
 
-### `repair_updates` *(optional)*
+### `repair_updates` _(optional)_
+
 - `id` PK
 - `repair_id` FK -> `repairs.id`
 - `status`
@@ -250,6 +267,7 @@ Bridge table for serialized units.
 ## J. Return to supplier
 
 ### `return_to_supplier`
+
 - `id` PK
 - `rts_transaction_number` unique
 - `supplier_id` FK -> `suppliers.id`
@@ -261,6 +279,7 @@ Bridge table for serialized units.
 - `created_at`
 
 ### `return_to_supplier_lines`
+
 - `id` PK
 - `return_to_supplier_id` FK -> `return_to_supplier.id`
 - `product_id` FK -> `products.id`
@@ -274,6 +293,7 @@ Bridge table for serialized units.
 ## K. Customer returns
 
 ### `customer_returns`
+
 - `id` PK
 - `return_transaction_number` unique
 - `return_date`
@@ -286,6 +306,7 @@ Bridge table for serialized units.
 - `created_at`
 
 ### `customer_return_lines`
+
 - `id` PK
 - `customer_return_id` FK -> `customer_returns.id`
 - `original_stock_out_line_id` nullable FK -> `stock_out_lines.id`
@@ -302,6 +323,7 @@ Bridge table for serialized units.
 ## L. Central stock movement ledger
 
 ### `stock_movements`
+
 This is the core traceability table.
 
 - `id` PK
@@ -323,6 +345,7 @@ This is the core traceability table.
 ## M. Audit logs
 
 ### `audit_logs`
+
 - `id` PK
 - `user_id` FK -> `users.id`
 - `module_name`
@@ -411,16 +434,19 @@ erDiagram
 ## 5. Critical business constraints
 
 ### Product rules
+
 - `DEVICE` -> must have serial number
 - `ACCESSORY` -> generated internal serial number
 - `CONSUMABLE` -> no serial row in `stock_items`
 
 ### Serial rules
+
 - `serial_number` must be unique
 - `factory_serial_number` must be unique when not null
 - generated format can be: `[PRODUCTCODE]-[YYYYMMDD]-[RUNNING_NO]`
 
 ### Transaction rules
+
 - stock cannot go negative
 - posted transactions should not be deleted
 - use cancellation instead of hard delete
@@ -428,10 +454,12 @@ erDiagram
 - every important change inserts records into `audit_logs`
 
 ### Return rules
+
 - customer return must reference an existing delivered stock-out
 - return-to-supplier can only reference received or failed items
 
 ### Status transitions
+
 - stock in -> `RECEIVED`
 - QC pass -> `IN_STOCK`
 - stock out -> `DELIVERED`
@@ -444,6 +472,7 @@ erDiagram
 ## 6. Recommended enums
 
 Use enums or lookup tables for:
+
 - `product_type`
 - `user_status`
 - `transaction_status`
@@ -458,6 +487,7 @@ Use enums or lookup tables for:
 ## 7. Recommended MVP scope
 
 ### Phase 1
+
 - `roles`
 - `users`
 - `products`
@@ -478,6 +508,7 @@ Use enums or lookup tables for:
 - `audit_logs`
 
 ### Phase 2
+
 - `repairs`
 - `return_to_supplier`
 - `return_to_supplier_lines`
@@ -489,9 +520,9 @@ Use enums or lookup tables for:
 ## 8. Suggested next conversion
 
 Best next outputs from this model:
+
 1. Exact ERD with PK/FK notation
 2. PostgreSQL SQL DDL
 3. Laravel migration structure
 4. Prisma schema
 5. Backend API-ready model list
-
