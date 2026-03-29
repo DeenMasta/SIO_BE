@@ -7,7 +7,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\ReportingAudit\Report\ReportPackRequest;
 use App\Models\CustomerReturn;
 use App\Models\PurchaseOrder;
-use App\Models\QcTransactionLine;
 use App\Models\Repair;
 use App\Models\ReturnToSupplier;
 use App\Models\StockIn;
@@ -218,35 +217,6 @@ class ReportPackController extends Controller
         return $this->paginatedResponse($records, 'Stock in by supplier report retrieved successfully.');
     }
 
-    public function qcPassFail(ReportPackRequest $request): JsonResponse
-    {
-        $filters = $request->validated();
-        $perPage = (int) ($filters['per_page'] ?? 15);
-
-        $query = DB::table('qc_transactions as qt')
-            ->leftJoin('qc_transaction_lines as qtl', 'qtl.qc_transaction_id', '=', 'qt.id')
-            ->select([
-                'qt.id',
-                'qt.qc_reference_number',
-                'qt.qc_date',
-                'qt.stock_in_id',
-                DB::raw('COALESCE(SUM(qtl.qty_pass), 0) as qty_pass'),
-                DB::raw('COALESCE(SUM(qtl.qty_fail), 0) as qty_fail'),
-            ])
-            ->groupBy('qt.id', 'qt.qc_reference_number', 'qt.qc_date', 'qt.stock_in_id')
-            ->orderByDesc('qt.id');
-
-        if (! empty($filters['date_from'])) {
-            $query->whereDate('qt.qc_date', '>=', (string) $filters['date_from']);
-        }
-        if (! empty($filters['date_to'])) {
-            $query->whereDate('qt.qc_date', '<=', (string) $filters['date_to']);
-        }
-
-        $records = $query->paginate($perPage);
-
-        return $this->paginatedResponse($records, 'QC pass/fail report retrieved successfully.');
-    }
 
     public function stockOutByInvoiceCustomer(ReportPackRequest $request): JsonResponse
     {

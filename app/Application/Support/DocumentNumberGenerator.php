@@ -2,6 +2,7 @@
 
 namespace App\Application\Support;
 
+use App\Models\SaleOrder;
 use App\Models\PurchaseOrder;
 use App\Models\StockIn;
 use Carbon\CarbonImmutable;
@@ -14,6 +15,15 @@ class DocumentNumberGenerator
             modelClass: PurchaseOrder::class,
             column: 'po_number',
             prefix: 'PO-'.CarbonImmutable::now()->format('Ymd'),
+        );
+    }
+
+    public function generateSaleOrderNumber(): string
+    {
+        return $this->generateNext(
+            modelClass: SaleOrder::class,
+            column: 'so_number',
+            prefix: 'SO-'.CarbonImmutable::now()->format('Ymd'),
         );
     }
 

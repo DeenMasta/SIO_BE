@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\MasterData\ProductController;
 use App\Http\Controllers\Api\MasterData\SupplierController;
 use App\Http\Controllers\Api\PurchasingInbound\PurchaseOrderController;
 use App\Http\Controllers\Api\PurchasingInbound\StockInController;
+use App\Http\Controllers\Api\SalesOutbound\SaleOrderController;
 use App\Http\Controllers\Api\ExceptionsReturns\CustomerReturnController;
 use App\Http\Controllers\Api\ExceptionsReturns\RepairController;
 use App\Http\Controllers\Api\ExceptionsReturns\ReturnToSupplierController;
@@ -16,7 +17,6 @@ use App\Http\Controllers\Api\ReportingAudit\DashboardController;
 use App\Http\Controllers\Api\ReportingAudit\MovementReportController;
 use App\Http\Controllers\Api\ReportingAudit\ReportPackController;
 use App\Http\Controllers\Api\ReportingAudit\SearchController;
-use App\Http\Controllers\Api\QcOutbound\QcTransactionController;
 use App\Http\Controllers\Api\QcOutbound\StockOutController;
 use Illuminate\Support\Facades\Route;
 
@@ -45,8 +45,12 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::patch('purchase-orders/{purchaseOrder}/issue', [PurchaseOrderController::class, 'issue']);
     Route::patch('purchase-orders/{purchaseOrder}/complete', [PurchaseOrderController::class, 'complete']);
     Route::patch('purchase-orders/{purchaseOrder}/cancel', [PurchaseOrderController::class, 'cancel']);
+    
+    Route::apiResource('sale-orders', SaleOrderController::class)->only(['index', 'store', 'show', 'update', 'destroy']);
+    Route::patch('sale-orders/{saleOrder}/confirm', [SaleOrderController::class, 'confirm']);
+    Route::patch('sale-orders/{saleOrder}/cancel', [SaleOrderController::class, 'cancel']);
+
     Route::apiResource('stock-ins', StockInController::class)->only(['index', 'store', 'show']);
-    Route::apiResource('qc-transactions', QcTransactionController::class)->only(['index', 'store', 'show']);
     Route::apiResource('stock-outs', StockOutController::class)->only(['index', 'store', 'show']);
     Route::apiResource('repairs', RepairController::class)->only(['index', 'store', 'show']);
     Route::patch('repairs/{id}/status', [RepairController::class, 'updateStatus']);
@@ -74,7 +78,6 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::get('purchase-orders/open', [ReportPackController::class, 'poOpen']);
         Route::get('purchase-orders/aging', [ReportPackController::class, 'poAging']);
         Route::get('stock-in/by-supplier-do', [ReportPackController::class, 'stockInBySupplierDo']);
-        Route::get('qc/pass-fail', [ReportPackController::class, 'qcPassFail']);
         Route::get('stock-out/by-invoice-customer', [ReportPackController::class, 'stockOutByInvoiceCustomer']);
         Route::get('repairs/summary', [ReportPackController::class, 'repairSummary']);
         Route::get('rts/summary', [ReportPackController::class, 'rtsSummary']);

@@ -10,7 +10,10 @@ use App\Domain\InventoryCore\Enums\StockItemStatus;
 use App\Domain\MasterData\Enums\ProductType;
 use App\Domain\QcOutbound\Enums\StockOutStatus;
 use App\Domain\ReportingAudit\Enums\AuditAction;
+use App\Domain\SalesOutbound\Enums\SaleOrderStatus;
 use App\Models\Product;
+use App\Models\SaleOrder;
+use App\Models\SaleOrderLine;
 use App\Models\StockItem;
 use App\Models\StockMovement;
 use App\Models\StockOut;
@@ -54,7 +57,18 @@ class PostStockOutUseCase implements UseCase
 
         try {
             return DB::transaction(function () use ($data): array {
+                $saleOrder = null;
+                if (!empty($data['sale_order_id'])) {
+                    $saleOrder = SaleOrder::query()->lockForUpdate()->find((int) $data['sale_order_id']);
+                    if (!$saleOrder || $saleOrder->status !== SaleOrderStatus::Confirmed) {
+                        throw ValidationException::withMessages([
+                            'sale_order_id' => ['Sale order must exist and be in CONFIRMED status to process a stock out.'],
+                        ]);
+                    }
+                }
+
                 $stockOut = $this->stockOuts->create([
+                    'sale_order_id' => $saleOrder?->id,
                     'stock_out_number' => $data['stock_out_number'],
                     'idempotency_key' => $data['idempotency_key'],
                     'stock_out_date' => $data['stock_out_date'],
@@ -70,8 +84,38 @@ class PostStockOutUseCase implements UseCase
             foreach ($data['lines'] as $line) {
                 $product = Product::query()->findOrFail((int) $line['product_id']);
                 $qty = (int) $line['qty'];
+                $saleOrderLineId = $line['sale_order_line_id'] ?? null;
+
+                if ($saleOrder && $saleOrderLineId) {
+                    $saleOrderLine = SaleOrderLine::query()
+                        ->where('sale_order_id', $saleOrder->id)
+                        ->where('id', $saleOrderLineId)
+                        ->where('product_id', $product->id)
+                        ->lockForUpdate()
+                        ->first();
+                    
+                    if (!$saleOrderLine) {
+                        throw ValidationException::withMessages([
+                            'lines' => ['Sale order line does not match the product or sale order.'],
+                        ]);
+                    }
+
+                    $remainingQty = max(0, $saleOrderLine->ordered_qty - $saleOrderLine->fulfilled_qty);
+                    if ($qty > $remainingQty) {
+                        throw ValidationException::withMessages([
+                            'lines' => [sprintf('Cannot overship sale order line. Remaining: %d, requested: %d.', $remainingQty, $qty)],
+                        ]);
+                    }
+
+                    $saleOrderLine->increment('fulfilled_qty', $qty);
+                } elseif ($saleOrder && !$saleOrderLineId) {
+                    throw ValidationException::withMessages([
+                        'lines' => ['Sale order line ID is required when fulfilling a sale order.'],
+                    ]);
+                }
 
                 $stockOutLine = $stockOut->lines()->create([
+                    'sale_order_line_id' => $saleOrderLineId,
                     'product_id' => $product->id,
                     'qty' => $qty,
                     'remarks' => $line['remarks'] ?? null,
@@ -109,6 +153,7 @@ class PostStockOutUseCase implements UseCase
                             'stock_item_id' => $stockItem->id,
                         ]);
 
+                        /** @var StockItem $stockItem */
                         $stockItem->update([
                             'current_status' => StockItemStatus::Delivered,
                             'is_available' => false,
@@ -170,8 +215,24 @@ class PostStockOutUseCase implements UseCase
 
             }
 
+                if ($saleOrder) {
+                    $allLinesFulfilled = true;
+                    // Re-query lines to get fresh fulfilled_qty
+                    foreach ($saleOrder->lines()->get() as $soLine) {
+                        if ($soLine->fulfilled_qty < $soLine->ordered_qty) {
+                            $allLinesFulfilled = false;
+                            break;
+                        }
+                    }
+
+                    if ($allLinesFulfilled) {
+                        $saleOrder->status = SaleOrderStatus::Fulfilled;
+                        $saleOrder->save();
+                    }
+                }
+
                 $result = [
-                    'stock_out' => $stockOut->fresh('lines.lineItems'),
+                    'stock_out' => $stockOut->fresh('lines.lineItems', 'saleOrder'),
                     'replayed' => false,
                 ];
 

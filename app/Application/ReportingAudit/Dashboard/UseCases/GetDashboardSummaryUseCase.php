@@ -6,7 +6,6 @@ use App\Application\Contracts\UseCase;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
-use App\Models\QcTransactionLine;
 use App\Models\StockIn;
 use App\Models\StockItem;
 use App\Models\StockMovement;
@@ -71,12 +70,6 @@ class GetDashboardSummaryUseCase implements UseCase
             ->groupBy('stock_in_date')
             ->orderBy('stock_in_date');
 
-        $qcTrendQuery = QcTransactionLine::query()
-            ->join('qc_transactions', 'qc_transactions.id', '=', 'qc_transaction_lines.qc_transaction_id')
-            ->selectRaw('qc_transactions.qc_date as date, SUM(qc_transaction_lines.qty_pass) as qty_pass, SUM(qc_transaction_lines.qty_fail) as qty_fail')
-            ->groupBy('qc_transactions.qc_date')
-            ->orderBy('qc_transactions.qc_date');
-
         $stockOutTrendQuery = StockOut::query()
             ->join('stock_out_lines', 'stock_out_lines.stock_out_id', '=', 'stock_out.id')
             ->selectRaw('stock_out.stock_out_date as date, COUNT(DISTINCT stock_out.id) as transaction_count, SUM(stock_out_lines.qty) as total_qty')
@@ -91,13 +84,11 @@ class GetDashboardSummaryUseCase implements UseCase
 
         if ($dateFrom !== null) {
             $stockInTrendQuery->whereDate('stock_in_date', '>=', (string) $dateFrom);
-            $qcTrendQuery->whereDate('qc_transactions.qc_date', '>=', (string) $dateFrom);
             $stockOutTrendQuery->whereDate('stock_out.stock_out_date', '>=', (string) $dateFrom);
             $topMovedProductsQuery->whereDate('movement_datetime', '>=', (string) $dateFrom);
         }
         if ($dateTo !== null) {
             $stockInTrendQuery->whereDate('stock_in_date', '<=', (string) $dateTo);
-            $qcTrendQuery->whereDate('qc_transactions.qc_date', '<=', (string) $dateTo);
             $stockOutTrendQuery->whereDate('stock_out.stock_out_date', '<=', (string) $dateTo);
             $topMovedProductsQuery->whereDate('movement_datetime', '<=', (string) $dateTo);
         }
@@ -129,7 +120,6 @@ class GetDashboardSummaryUseCase implements UseCase
             'overdue_po_count' => $overduePoCount,
             'movements_today' => StockMovement::query()->whereDate('movement_datetime', today())->count(),
             'stock_in_trend' => $stockInTrendQuery->get(),
-            'qc_pass_fail_trend' => $qcTrendQuery->get(),
             'stock_out_trend' => $stockOutTrendQuery->get(),
             'top_moved_products' => $topMovedProducts,
         ];
