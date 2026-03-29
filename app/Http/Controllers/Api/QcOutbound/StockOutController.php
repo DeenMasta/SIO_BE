@@ -7,9 +7,12 @@ use App\Application\QcOutbound\StockOut\UseCases\ListStockOutsUseCase;
 use App\Application\QcOutbound\StockOut\UseCases\PostStockOutUseCase;
 use App\Application\Support\ApiResponse;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\QcOutbound\StockOut\StockOutSerialOptionsRequest;
 use App\Http\Requests\Api\QcOutbound\StockOut\StoreStockOutRequest;
 use App\Http\Resources\Api\QcOutbound\StockOutResource;
+use App\Models\StockItem;
 use App\Models\StockOut;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -66,5 +69,42 @@ class StockOutController extends Controller
         $this->authorize('view', $stockOut);
 
         return ApiResponse::success(new StockOutResource($stockOut), 'Stock out retrieved successfully.');
+    }
+
+    public function serialOptions(StockOutSerialOptionsRequest $request): JsonResponse
+    {
+        $this->authorize('viewAny', StockOut::class);
+
+        $filters = $request->validated();
+        $perPage = (int) ($filters['per_page'] ?? 200);
+
+        $records = StockItem::query()
+            ->select(['id', 'product_id', 'serial_number', 'factory_serial_number'])
+            ->where('is_available', true)
+            ->where('current_status', 'IN_STOCK')
+            ->when(! empty($filters['product_id']), function (Builder $query) use ($filters): void {
+                $query->where('product_id', (int) $filters['product_id']);
+            })
+            ->when(! empty($filters['query']), function (Builder $query) use ($filters): void {
+                $query->where(function (Builder $search) use ($filters): void {
+                    $search->where('serial_number', 'like', '%'.(string) $filters['query'].'%')
+                        ->orWhere('factory_serial_number', 'like', '%'.(string) $filters['query'].'%');
+                });
+            })
+            ->orderByDesc('id')
+            ->paginate($perPage > 0 ? $perPage : 200);
+
+        return ApiResponse::success(
+            $records->items(),
+            'Registered serial options retrieved successfully.',
+            meta: [
+                'pagination' => [
+                    'current_page' => $records->currentPage(),
+                    'per_page' => $records->perPage(),
+                    'total' => $records->total(),
+                    'last_page' => $records->lastPage(),
+                ],
+            ],
+        );
     }
 }

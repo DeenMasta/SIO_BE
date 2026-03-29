@@ -45,12 +45,13 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::patch('purchase-orders/{purchaseOrder}/issue', [PurchaseOrderController::class, 'issue']);
     Route::patch('purchase-orders/{purchaseOrder}/complete', [PurchaseOrderController::class, 'complete']);
     Route::patch('purchase-orders/{purchaseOrder}/cancel', [PurchaseOrderController::class, 'cancel']);
-    
+
     Route::apiResource('sale-orders', SaleOrderController::class)->only(['index', 'store', 'show', 'update', 'destroy']);
     Route::patch('sale-orders/{saleOrder}/confirm', [SaleOrderController::class, 'confirm']);
     Route::patch('sale-orders/{saleOrder}/cancel', [SaleOrderController::class, 'cancel']);
 
     Route::apiResource('stock-ins', StockInController::class)->only(['index', 'store', 'show']);
+    Route::get('stock-outs/serial-options', [StockOutController::class, 'serialOptions']);
     Route::apiResource('stock-outs', StockOutController::class)->only(['index', 'store', 'show']);
     Route::apiResource('repairs', RepairController::class)->only(['index', 'store', 'show']);
     Route::patch('repairs/{id}/status', [RepairController::class, 'updateStatus']);

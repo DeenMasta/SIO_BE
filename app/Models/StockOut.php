@@ -23,7 +23,6 @@ class StockOut extends Model
         'invoice_number',
         'pic_id',
         'pick_list_reference',
-        'packing_verified',
         'status',
         'remarks',
     ];
@@ -32,7 +31,6 @@ class StockOut extends Model
     {
         return [
             'stock_out_date' => 'date',
-            'packing_verified' => 'boolean',
             'status' => StockOutStatus::class,
         ];
     }

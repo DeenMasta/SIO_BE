@@ -17,6 +17,7 @@ class ReportPackRequest extends StrictFormRequest
     public function rules(): array
     {
         return [
+            'page' => ['nullable', 'integer', 'min:1'],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:200'],
@@ -33,6 +34,7 @@ class ReportPackRequest extends StrictFormRequest
     protected function allowedFields(): array
     {
         return [
+            'page',
             'date_from',
             'date_to',
             'per_page',

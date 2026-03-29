@@ -5,6 +5,7 @@ namespace App\Application\QcOutbound\StockOut\UseCases;
 use App\Application\Contracts\Repositories\StockOutRepository;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
+use App\Application\Support\StockBalanceUpdater;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
 use App\Domain\MasterData\Enums\ProductType;
@@ -20,6 +21,7 @@ use App\Models\StockOut;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class PostStockOutUseCase implements UseCase
@@ -27,6 +29,7 @@ class PostStockOutUseCase implements UseCase
     public function __construct(
         private readonly StockOutRepository $stockOuts,
         private readonly AuditLogger $auditLogger,
+        private readonly StockBalanceUpdater $stockBalanceUpdater,
     )
     {
     }
@@ -57,6 +60,8 @@ class PostStockOutUseCase implements UseCase
 
         try {
             return DB::transaction(function () use ($data): array {
+                $affectedProductIds = [];
+                $usedStockItemIds = [];
                 $saleOrder = null;
                 if (!empty($data['sale_order_id'])) {
                     $saleOrder = SaleOrder::query()->lockForUpdate()->find((int) $data['sale_order_id']);
@@ -67,22 +72,32 @@ class PostStockOutUseCase implements UseCase
                     }
                 }
 
-                $stockOut = $this->stockOuts->create([
+                $stockOutData = [
                     'sale_order_id' => $saleOrder?->id,
                     'stock_out_number' => $data['stock_out_number'],
                     'idempotency_key' => $data['idempotency_key'],
                     'stock_out_date' => $data['stock_out_date'],
                     'customer_id' => $data['customer_id'],
-                    'invoice_number' => $data['invoice_number'],
                     'pic_id' => $data['pic_id'],
                     'pick_list_reference' => $data['pick_list_reference'] ?? null,
-                    'packing_verified' => (bool) ($data['packing_verified'] ?? false),
                     'status' => StockOutStatus::Posted,
                     'remarks' => $data['remarks'] ?? null,
-                ]);
+                ];
+
+                // Backward compatibility: some databases still keep invoice_number as NOT NULL on stock_out.
+                if (Schema::hasColumn('stock_out', 'invoice_number')) {
+                    $stockOutData['invoice_number'] = (string) (
+                        $data['invoice_number']
+                        ?? $saleOrder?->invoice_number
+                        ?? $data['stock_out_number']
+                    );
+                }
+
+                $stockOut = $this->stockOuts->create($stockOutData);
 
             foreach ($data['lines'] as $line) {
                 $product = Product::query()->findOrFail((int) $line['product_id']);
+                $affectedProductIds[] = (int) $product->id;
                 $qty = (int) $line['qty'];
                 $saleOrderLineId = $line['sale_order_line_id'] ?? null;
 
@@ -93,7 +108,7 @@ class PostStockOutUseCase implements UseCase
                         ->where('product_id', $product->id)
                         ->lockForUpdate()
                         ->first();
-                    
+
                     if (!$saleOrderLine) {
                         throw ValidationException::withMessages([
                             'lines' => ['Sale order line does not match the product or sale order.'],
@@ -124,6 +139,19 @@ class PostStockOutUseCase implements UseCase
                 if (in_array($product->product_type, [ProductType::Device, ProductType::Accessory], true)) {
                     $stockItemIds = array_values(array_map('intval', Arr::wrap($line['stock_item_ids'] ?? [])));
 
+                    if (count($stockItemIds) !== count(array_unique($stockItemIds))) {
+                        throw ValidationException::withMessages([
+                            'lines' => ['Duplicate stock_item_ids are not allowed in the same line.'],
+                        ]);
+                    }
+
+                    $duplicateAcrossLines = array_values(array_intersect($stockItemIds, $usedStockItemIds));
+                    if ($duplicateAcrossLines !== []) {
+                        throw ValidationException::withMessages([
+                            'lines' => ['Duplicate stock_item_ids are not allowed across lines in one stock out request.'],
+                        ]);
+                    }
+
                     if (count($stockItemIds) !== $qty) {
                         throw ValidationException::withMessages([
                             'lines' => ['Serialized products require stock_item_ids count to match qty.'],
@@ -133,22 +161,20 @@ class PostStockOutUseCase implements UseCase
                     $stockItems = StockItem::query()
                         ->whereIn('id', $stockItemIds)
                         ->where('product_id', $product->id)
+                        ->where('current_status', StockItemStatus::InStock->value)
+                        ->where('is_available', true)
                         ->lockForUpdate()
                         ->get();
 
                     if ($stockItems->count() !== count($stockItemIds)) {
                         throw ValidationException::withMessages([
-                            'lines' => ['Some stock items are invalid for this stock out line.'],
+                            'lines' => ['Some serials are invalid for this line or not currently IN_STOCK.'],
                         ]);
                     }
 
-                    foreach ($stockItems as $stockItem) {
-                        if ($stockItem->current_status !== StockItemStatus::InStock || ! $stockItem->is_available) {
-                            throw ValidationException::withMessages([
-                                'lines' => ['Stock out only allows stock items in IN_STOCK status.'],
-                            ]);
-                        }
+                    $usedStockItemIds = array_values(array_merge($usedStockItemIds, $stockItemIds));
 
+                    foreach ($stockItems as $stockItem) {
                         $lineItem = $stockOutLine->lineItems()->create([
                             'stock_item_id' => $stockItem->id,
                         ]);
@@ -230,6 +256,8 @@ class PostStockOutUseCase implements UseCase
                         $saleOrder->save();
                     }
                 }
+
+                $this->stockBalanceUpdater->recomputeForProducts($affectedProductIds);
 
                 $result = [
                     'stock_out' => $stockOut->fresh('lines.lineItems', 'saleOrder'),

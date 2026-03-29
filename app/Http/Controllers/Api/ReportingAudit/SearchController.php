@@ -51,9 +51,10 @@ class SearchController extends Controller
         $filters = $request->validated();
 
         $records = StockOut::query()
-            ->select(['id', 'stock_out_number', 'stock_out_date', 'invoice_number', 'customer_id'])
-            ->where('invoice_number', 'like', '%'.(string) $filters['query'].'%')
-            ->orderByDesc('id')
+            ->join('sale_orders', 'sale_orders.id', '=', 'stock_outs.sale_order_id')
+            ->select(['stock_outs.id', 'stock_outs.stock_out_number', 'stock_outs.stock_out_date', 'sale_orders.invoice_number', 'stock_outs.customer_id'])
+            ->where('sale_orders.invoice_number', 'like', '%'.(string) $filters['query'].'%')
+            ->orderByDesc('stock_outs.id')
             ->paginate((int) ($filters['per_page'] ?? 15));
 
         return $this->paginatedResponse($records, 'Invoice search completed successfully.');

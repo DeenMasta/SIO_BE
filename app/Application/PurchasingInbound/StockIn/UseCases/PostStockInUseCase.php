@@ -5,6 +5,7 @@ namespace App\Application\PurchasingInbound\StockIn\UseCases;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\SerialNumberGenerator;
+use App\Application\Support\StockBalanceUpdater;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\SerialSource;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
@@ -28,6 +29,7 @@ class PostStockInUseCase implements UseCase
     public function __construct(
         private readonly SerialNumberGenerator $serialNumberGenerator,
         private readonly AuditLogger $auditLogger,
+        private readonly StockBalanceUpdater $stockBalanceUpdater,
     )
     {
     }
@@ -37,6 +39,7 @@ class PostStockInUseCase implements UseCase
         $data = (array) $payload;
 
         return DB::transaction(function () use ($data): StockIn {
+            $affectedProductIds = [];
             $purchaseOrderId = $data['purchase_order_id'] ?? null;
             $purchaseOrder = null;
 
@@ -73,6 +76,7 @@ class PostStockInUseCase implements UseCase
             foreach ($data['lines'] as $line) {
                 $purchaseOrderLine = $this->resolvePurchaseOrderLine($purchaseOrder, $line);
                 $product = $purchaseOrderLine?->product ?? Product::query()->findOrFail((int) $line['product_id']);
+                $affectedProductIds[] = (int) $product->id;
                 $receivedQty = (int) $line['received_qty'];
                 $lineCondition = $this->resolveLineCondition($line, $receivedQty);
                 $unitReceipts = $this->buildUnitReceipts($line, $receivedQty, $lineCondition);
@@ -122,7 +126,7 @@ class PostStockInUseCase implements UseCase
                             'serial_number' => $serialValue,
                             'factory_serial_number' => $incomingSerial !== '' ? $incomingSerial : null,
                             'serial_source' => $serialSource,
-                            'current_status' => StockItemStatus::Received,
+                            'current_status' => StockItemStatus::InStock,
                             'received_condition' => $itemCondition !== '' ? $itemCondition : null,
                             'is_available' => true,
                             'last_movement_at' => now(),
@@ -138,7 +142,7 @@ class PostStockInUseCase implements UseCase
                             'reference_id' => $stockInLine->id,
                             'qty_in' => 1,
                             'qty_out' => 0,
-                            'to_status' => StockItemStatus::Received->value,
+                            'to_status' => StockItemStatus::InStock->value,
                             'performed_by' => (int) $data['stock_in_pic_id'],
                             'remarks' => $itemRemarks,
                         ]);
@@ -167,7 +171,7 @@ class PostStockInUseCase implements UseCase
                             'serial_number' => $serialValue,
                             'factory_serial_number' => $incomingSerial !== '' ? $incomingSerial : null,
                             'serial_source' => $serialSource,
-                            'current_status' => StockItemStatus::Received,
+                            'current_status' => StockItemStatus::InStock,
                             'received_condition' => $itemCondition !== '' ? $itemCondition : null,
                             'is_available' => true,
                             'last_movement_at' => now(),
@@ -183,7 +187,7 @@ class PostStockInUseCase implements UseCase
                             'reference_id' => $stockInLine->id,
                             'qty_in' => 1,
                             'qty_out' => 0,
-                            'to_status' => StockItemStatus::Received->value,
+                            'to_status' => StockItemStatus::InStock->value,
                             'performed_by' => (int) $data['stock_in_pic_id'],
                             'remarks' => $itemRemarks,
                         ]);
@@ -202,7 +206,7 @@ class PostStockInUseCase implements UseCase
                     'reference_id' => $stockInLine->id,
                     'qty_in' => $receivedQty,
                     'qty_out' => 0,
-                    'to_status' => StockItemStatus::Received->value,
+                    'to_status' => StockItemStatus::InStock->value,
                     'performed_by' => (int) $data['stock_in_pic_id'],
                     'remarks' => $line['remarks'] ?? null,
                 ]);
@@ -217,6 +221,8 @@ class PostStockInUseCase implements UseCase
                 $purchaseOrder->status = PurchaseOrderStatus::Completed;
                 $purchaseOrder->save();
             }
+
+            $this->stockBalanceUpdater->recomputeForProducts($affectedProductIds);
 
             $result = $stockIn->fresh('lines.product', 'lines.stockItems');
 

@@ -10,8 +10,6 @@ use App\Models\PurchaseOrder;
 use App\Models\Repair;
 use App\Models\ReturnToSupplier;
 use App\Models\StockIn;
-use App\Models\StockItem;
-use App\Models\StockMovement;
 use App\Models\StockOut;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -24,37 +22,15 @@ class ReportPackController extends Controller
     {
         $filters = $request->validated();
         $perPage = (int) ($filters['per_page'] ?? 15);
-
-        $serializedByProduct = StockItem::query()
-            ->selectRaw('product_id')
-            ->selectRaw("SUM(CASE WHEN current_status = 'RECEIVED' THEN 1 ELSE 0 END) as qty_received_pending_qc")
-            ->selectRaw("SUM(CASE WHEN current_status = 'IN_STOCK' THEN 1 ELSE 0 END) as qty_in_stock_serialized")
-            ->selectRaw("SUM(CASE WHEN current_status = 'DELIVERED' THEN 1 ELSE 0 END) as qty_delivered")
-            ->selectRaw("SUM(CASE WHEN current_status = 'UNDER_REPAIR' THEN 1 ELSE 0 END) as qty_under_repair")
-            ->selectRaw("SUM(CASE WHEN current_status = 'RETURNED' THEN 1 ELSE 0 END) as qty_returned")
-            ->selectRaw("SUM(CASE WHEN current_status = 'RETURNED_TO_SUPPLIER' THEN 1 ELSE 0 END) as qty_returned_to_supplier")
-            ->groupBy('product_id');
-
-        $nonSerializedByProduct = StockMovement::query()
-            ->whereNull('stock_item_id')
-            ->selectRaw('product_id')
-            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'IN_STOCK' THEN qty_in ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'IN_STOCK' THEN qty_out ELSE 0 END), 0) as qty_in_stock_non_serialized")
-            ->groupBy('product_id');
-
         $query = DB::table('products as p')
-            ->leftJoinSub($serializedByProduct, 'sb', function ($join): void {
-                $join->on('sb.product_id', '=', 'p.id');
-            })
-            ->leftJoinSub($nonSerializedByProduct, 'ns', function ($join): void {
-                $join->on('ns.product_id', '=', 'p.id');
-            })
+            ->leftJoin('stock_balances as sb', 'sb.product_id', '=', 'p.id')
             ->select([
                 'p.id as product_id',
                 'p.product_code',
                 'p.product_name',
                 'p.reorder_level',
-                DB::raw('COALESCE(sb.qty_received_pending_qc, 0) as qty_received_pending_qc'),
-                DB::raw('COALESCE(sb.qty_in_stock_serialized, 0) + CASE WHEN COALESCE(ns.qty_in_stock_non_serialized, 0) < 0 THEN 0 ELSE COALESCE(ns.qty_in_stock_non_serialized, 0) END as qty_in_stock'),
+                DB::raw('0 as qty_received_pending_qc'),
+                DB::raw('COALESCE(sb.qty_in_stock, 0) as qty_in_stock'),
                 DB::raw('COALESCE(sb.qty_delivered, 0) as qty_delivered'),
                 DB::raw('COALESCE(sb.qty_under_repair, 0) as qty_under_repair'),
                 DB::raw('COALESCE(sb.qty_returned, 0) as qty_returned'),
@@ -116,35 +92,18 @@ class ReportPackController extends Controller
     {
         $filters = $request->validated();
         $perPage = (int) ($filters['per_page'] ?? 15);
-
-        $serializedInStockByProduct = StockItem::query()
-            ->selectRaw('product_id')
-            ->selectRaw("SUM(CASE WHEN current_status = 'IN_STOCK' THEN 1 ELSE 0 END) as qty_in_stock_serialized")
-            ->groupBy('product_id');
-
-        $nonSerializedInStockByProduct = StockMovement::query()
-            ->whereNull('stock_item_id')
-            ->selectRaw('product_id')
-            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'IN_STOCK' THEN qty_in ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'IN_STOCK' THEN qty_out ELSE 0 END), 0) as qty_in_stock_non_serialized")
-            ->groupBy('product_id');
-
         $query = DB::table('products as p')
-            ->leftJoinSub($serializedInStockByProduct, 'sb', function ($join): void {
-                $join->on('sb.product_id', '=', 'p.id');
-            })
-            ->leftJoinSub($nonSerializedInStockByProduct, 'ns', function ($join): void {
-                $join->on('ns.product_id', '=', 'p.id');
-            })
+            ->leftJoin('stock_balances as sb', 'sb.product_id', '=', 'p.id')
             ->select([
                 'p.id as product_id',
                 'p.product_code',
                 'p.product_name',
                 'p.reorder_level',
-                DB::raw('COALESCE(sb.qty_in_stock_serialized, 0) + CASE WHEN COALESCE(ns.qty_in_stock_non_serialized, 0) < 0 THEN 0 ELSE COALESCE(ns.qty_in_stock_non_serialized, 0) END as qty_in_stock'),
-                DB::raw('(p.reorder_level - (COALESCE(sb.qty_in_stock_serialized, 0) + CASE WHEN COALESCE(ns.qty_in_stock_non_serialized, 0) < 0 THEN 0 ELSE COALESCE(ns.qty_in_stock_non_serialized, 0) END)) as shortage_qty'),
+                DB::raw('COALESCE(sb.qty_in_stock, 0) as qty_in_stock'),
+                DB::raw('(p.reorder_level - COALESCE(sb.qty_in_stock, 0)) as shortage_qty'),
             ])
             ->where('p.reorder_level', '>', 0)
-            ->whereRaw('COALESCE(sb.qty_in_stock_serialized, 0) + CASE WHEN COALESCE(ns.qty_in_stock_non_serialized, 0) < 0 THEN 0 ELSE COALESCE(ns.qty_in_stock_non_serialized, 0) END < p.reorder_level')
+            ->whereRaw('COALESCE(sb.qty_in_stock, 0) < p.reorder_level')
             ->orderByDesc('shortage_qty')
             ->orderBy('p.product_code');
 
@@ -223,26 +182,27 @@ class ReportPackController extends Controller
         $filters = $request->validated();
         $perPage = (int) ($filters['per_page'] ?? 15);
 
-        $query = DB::table('stock_out as so')
+        $query = DB::table('stock_outs as so')
             ->leftJoin('customers as c', 'c.id', '=', 'so.customer_id')
             ->leftJoin('stock_out_lines as sol', 'sol.stock_out_id', '=', 'so.id')
+            ->leftJoin('sale_orders as sale', 'sale.id', '=', 'so.sale_order_id')
             ->select([
                 'so.id',
                 'so.stock_out_number',
                 'so.stock_out_date',
-                'so.invoice_number',
+                'sale.invoice_number',
                 'so.customer_id',
                 'c.customer_name',
                 DB::raw('COALESCE(SUM(sol.qty), 0) as total_qty'),
             ])
-            ->groupBy('so.id', 'so.stock_out_number', 'so.stock_out_date', 'so.invoice_number', 'so.customer_id', 'c.customer_name')
+            ->groupBy('so.id', 'so.stock_out_number', 'so.stock_out_date', 'sale.invoice_number', 'so.customer_id', 'c.customer_name')
             ->orderByDesc('so.id');
 
         if (! empty($filters['customer_id'])) {
             $query->where('so.customer_id', (int) $filters['customer_id']);
         }
         if (! empty($filters['invoice_number'])) {
-            $query->where('so.invoice_number', 'like', '%'.(string) $filters['invoice_number'].'%');
+            $query->where('sale.invoice_number', 'like', '%'.(string) $filters['invoice_number'].'%');
         }
         if (! empty($filters['date_from'])) {
             $query->whereDate('so.stock_out_date', '>=', (string) $filters['date_from']);
