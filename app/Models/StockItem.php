@@ -3,10 +3,12 @@
 namespace App\Models;
 
 use App\Domain\InventoryCore\Enums\SerialSource;
+use App\Domain\InventoryCore\Enums\StockItemQcStatus;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class StockItem extends Model
 {
@@ -20,6 +22,7 @@ class StockItem extends Model
         'serial_source',
         'current_status',
         'received_condition',
+        'qc_status',
         'is_available',
         'last_movement_at',
         'remarks',
@@ -28,9 +31,10 @@ class StockItem extends Model
     protected function casts(): array
     {
         return [
-            'serial_source' => SerialSource::class,
-            'current_status' => StockItemStatus::class,
-            'is_available' => 'boolean',
+            'serial_source'   => SerialSource::class,
+            'current_status'  => StockItemStatus::class,
+            'qc_status'       => StockItemQcStatus::class,
+            'is_available'    => 'boolean',
             'last_movement_at' => 'datetime',
         ];
     }
@@ -38,5 +42,18 @@ class StockItem extends Model
     public function stockInLine(): BelongsTo
     {
         return $this->belongsTo(StockInLine::class);
+    }
+
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class);
+    }
+
+    /**
+     * @return HasMany<QcCheck>
+     */
+    public function qcChecks(): HasMany
+    {
+        return $this->hasMany(QcCheck::class)->orderBy('checked_at', 'asc');
     }
 }

@@ -23,7 +23,6 @@ class PostStockInRequest extends StrictFormRequest
             'stock_in_date' => ['required', 'date'],
             'purchase_order_id' => ['nullable', 'integer', 'exists:purchase_orders,id'],
             'supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
-            'qc_person_id' => ['nullable', 'integer', 'exists:users,id'],
             'remarks' => ['nullable', 'string', 'max:2000'],
 
             'lines' => ['required', 'array', 'min:1'],
@@ -161,7 +160,6 @@ class PostStockInRequest extends StrictFormRequest
             'stock_in_date',
             'purchase_order_id',
             'supplier_id',
-            'qc_person_id',
             'remarks',
             'lines',
         ];

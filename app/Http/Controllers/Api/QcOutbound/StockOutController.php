@@ -82,6 +82,7 @@ class StockOutController extends Controller
             ->select(['id', 'product_id', 'serial_number', 'factory_serial_number'])
             ->where('is_available', true)
             ->where('current_status', 'IN_STOCK')
+            ->where('qc_status', 'PASSED')
             ->when(! empty($filters['product_id']), function (Builder $query) use ($filters): void {
                 $query->where('product_id', (int) $filters['product_id']);
             })

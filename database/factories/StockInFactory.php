@@ -26,7 +26,6 @@ class StockInFactory extends Factory
             'purchase_order_id' => null,
             'supplier_id' => Supplier::factory(),
             'stock_in_pic_id' => User::factory(),
-            'qc_person_id' => null,
             'status' => StockInStatus::Posted->value,
             'remarks' => fake()->optional()->sentence(),
         ];

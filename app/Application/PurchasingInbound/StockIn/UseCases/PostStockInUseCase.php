@@ -8,6 +8,7 @@ use App\Application\Support\SerialNumberGenerator;
 use App\Application\Support\StockBalanceUpdater;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\SerialSource;
+use App\Domain\InventoryCore\Enums\StockItemQcStatus;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
 use App\Domain\MasterData\Enums\ProductType;
 use App\Domain\PurchasingInbound\Enums\PurchaseOrderStatus;
@@ -68,7 +69,6 @@ class PostStockInUseCase implements UseCase
                 'purchase_order_id' => $purchaseOrderId,
                 'supplier_id' => $data['supplier_id'],
                 'stock_in_pic_id' => $data['stock_in_pic_id'],
-                'qc_person_id' => $data['qc_person_id'] ?? null,
                 'status' => StockInStatus::Received,
                 'remarks' => $data['remarks'] ?? null,
             ]);
@@ -121,16 +121,17 @@ class PostStockInUseCase implements UseCase
                         $serialSource = $incomingSerial !== '' ? SerialSource::Factory : SerialSource::Generated;
 
                         $stockItem = StockItem::query()->create([
-                            'product_id' => $product->id,
-                            'stock_in_line_id' => $stockInLine->id,
-                            'serial_number' => $serialValue,
-                            'factory_serial_number' => $incomingSerial !== '' ? $incomingSerial : null,
-                            'serial_source' => $serialSource,
-                            'current_status' => StockItemStatus::InStock,
-                            'received_condition' => $itemCondition !== '' ? $itemCondition : null,
-                            'is_available' => true,
-                            'last_movement_at' => now(),
-                            'remarks' => $itemRemarks,
+                            'product_id'             => $product->id,
+                            'stock_in_line_id'       => $stockInLine->id,
+                            'serial_number'          => $serialValue,
+                            'factory_serial_number'  => $incomingSerial !== '' ? $incomingSerial : null,
+                            'serial_source'          => $serialSource,
+                            'current_status'         => StockItemStatus::InStock,
+                            'received_condition'     => $itemCondition !== '' ? $itemCondition : null,
+                            'qc_status'              => StockItemQcStatus::Pending,
+                            'is_available'           => true,
+                            'last_movement_at'       => now(),
+                            'remarks'                => $itemRemarks,
                         ]);
 
                         StockMovement::query()->create([
@@ -166,16 +167,17 @@ class PostStockInUseCase implements UseCase
                         $serialSource = $incomingSerial !== '' ? SerialSource::Factory : SerialSource::Generated;
 
                         $stockItem = StockItem::query()->create([
-                            'product_id' => $product->id,
-                            'stock_in_line_id' => $stockInLine->id,
-                            'serial_number' => $serialValue,
-                            'factory_serial_number' => $incomingSerial !== '' ? $incomingSerial : null,
-                            'serial_source' => $serialSource,
-                            'current_status' => StockItemStatus::InStock,
-                            'received_condition' => $itemCondition !== '' ? $itemCondition : null,
-                            'is_available' => true,
-                            'last_movement_at' => now(),
-                            'remarks' => $itemRemarks,
+                            'product_id'             => $product->id,
+                            'stock_in_line_id'       => $stockInLine->id,
+                            'serial_number'          => $serialValue,
+                            'factory_serial_number'  => $incomingSerial !== '' ? $incomingSerial : null,
+                            'serial_source'          => $serialSource,
+                            'current_status'         => StockItemStatus::InStock,
+                            'received_condition'     => $itemCondition !== '' ? $itemCondition : null,
+                            'qc_status'              => StockItemQcStatus::Pending,
+                            'is_available'           => true,
+                            'last_movement_at'       => now(),
+                            'remarks'                => $itemRemarks,
                         ]);
 
                         StockMovement::query()->create([

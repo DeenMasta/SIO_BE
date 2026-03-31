@@ -19,7 +19,6 @@ class StockInResource extends JsonResource
             'purchase_order_id' => $this->purchase_order_id,
             'supplier_id' => $this->supplier_id,
             'stock_in_pic_id' => $this->stock_in_pic_id,
-            'qc_person_id' => $this->qc_person_id,
             'status' => $this->status?->value === 'POSTED'
                 ? 'RECEIVED'
                 : $this->status?->value,

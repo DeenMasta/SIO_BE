@@ -19,6 +19,7 @@ use App\Models\Customer;
 use App\Models\CustomerReturn;
 use App\Models\PurchaseOrder;
 use App\Models\Product;
+use App\Models\QcCheck;
 use App\Models\Repair;
 use App\Models\ReturnToSupplier;
 use App\Models\SaleOrder;
@@ -30,6 +31,7 @@ use App\Policies\CustomerPolicy;
 use App\Policies\CustomerReturnPolicy;
 use App\Policies\PurchaseOrderPolicy;
 use App\Policies\ProductPolicy;
+use App\Policies\QcCheckPolicy;
 use App\Policies\RepairPolicy;
 use App\Policies\ReturnToSupplierPolicy;
 use App\Policies\SaleOrderPolicy;
@@ -102,6 +104,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(StockIn::class, StockInPolicy::class);
         Gate::policy(StockOut::class, StockOutPolicy::class);
         Gate::policy(Repair::class, RepairPolicy::class);
+        Gate::policy(QcCheck::class, QcCheckPolicy::class);
         Gate::policy(ReturnToSupplier::class, ReturnToSupplierPolicy::class);
         Gate::policy(CustomerReturn::class, CustomerReturnPolicy::class);
     }

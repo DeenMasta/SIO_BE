@@ -35,7 +35,7 @@ class SearchController extends Controller
         $filters = $request->validated();
 
         $records = StockItem::query()
-            ->select(['id', 'product_id', 'serial_number', 'factory_serial_number', 'current_status', 'is_available'])
+            ->select(['id', 'product_id', 'serial_number', 'factory_serial_number', 'current_status', 'is_available', 'qc_status'])
             ->where(function (Builder $query) use ($filters): void {
                 $query->where('serial_number', 'like', '%'.(string) $filters['query'].'%')
                     ->orWhere('factory_serial_number', 'like', '%'.(string) $filters['query'].'%');

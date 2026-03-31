@@ -7,6 +7,7 @@ use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\StockBalanceUpdater;
 use App\Domain\InventoryCore\Enums\MovementType;
+use App\Domain\InventoryCore\Enums\StockItemQcStatus;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
 use App\Domain\MasterData\Enums\ProductType;
 use App\Domain\QcOutbound\Enums\StockOutStatus;
@@ -163,12 +164,13 @@ class PostStockOutUseCase implements UseCase
                         ->where('product_id', $product->id)
                         ->where('current_status', StockItemStatus::InStock->value)
                         ->where('is_available', true)
+                        ->where('qc_status', StockItemQcStatus::Passed->value)
                         ->lockForUpdate()
                         ->get();
 
                     if ($stockItems->count() !== count($stockItemIds)) {
                         throw ValidationException::withMessages([
-                            'lines' => ['Some serials are invalid for this line or not currently IN_STOCK.'],
+                            'lines' => ['Some serials are invalid for this line, not currently IN_STOCK, or have not passed QC (must be QC_PASSED to dispatch).'],
                         ]);
                     }
 

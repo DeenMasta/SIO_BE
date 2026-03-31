@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\MasterData\ProductController;
 use App\Http\Controllers\Api\MasterData\SupplierController;
 use App\Http\Controllers\Api\PurchasingInbound\PurchaseOrderController;
 use App\Http\Controllers\Api\PurchasingInbound\StockInController;
+use App\Http\Controllers\Api\PurchasingInbound\QcDocumentController;
 use App\Http\Controllers\Api\SalesOutbound\SaleOrderController;
 use App\Http\Controllers\Api\ExceptionsReturns\CustomerReturnController;
 use App\Http\Controllers\Api\ExceptionsReturns\RepairController;
@@ -51,6 +52,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::patch('sale-orders/{saleOrder}/cancel', [SaleOrderController::class, 'cancel']);
 
     Route::apiResource('stock-ins', StockInController::class)->only(['index', 'store', 'show']);
+    Route::apiResource('qc-documents', QcDocumentController::class)->only(['index', 'store', 'show', 'update'])->middleware('can:access-staff');
     Route::get('stock-outs/serial-options', [StockOutController::class, 'serialOptions']);
     Route::apiResource('stock-outs', StockOutController::class)->only(['index', 'store', 'show']);
     Route::apiResource('repairs', RepairController::class)->only(['index', 'store', 'show']);

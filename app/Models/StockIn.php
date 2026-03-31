@@ -19,7 +19,6 @@ class StockIn extends Model
         'purchase_order_id',
         'supplier_id',
         'stock_in_pic_id',
-        'qc_person_id',
         'status',
         'remarks',
     ];

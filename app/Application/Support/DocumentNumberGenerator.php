@@ -36,6 +36,15 @@ class DocumentNumberGenerator
         );
     }
 
+    public function generateQcDocumentNumber(): string
+    {
+        return $this->generateNext(
+            modelClass: \App\Models\QcDocument::class,
+            column: 'document_number',
+            prefix: 'QC-'.CarbonImmutable::now()->format('Ymd'),
+        );
+    }
+
     /**
      * @param  class-string<\Illuminate\Database\Eloquent\Model>  $modelClass
      */
