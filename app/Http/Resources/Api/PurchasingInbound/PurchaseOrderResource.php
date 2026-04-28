@@ -33,6 +33,8 @@ class PurchaseOrderResource extends JsonResource
                 'unit_price' => (string) $line->unit_price,
                 'subtotal' => (string) $line->subtotal,
                 'remarks' => $line->remarks,
+                'created_at' => $line->created_at,
+                'updated_at' => $line->updated_at,
             ]),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

@@ -124,6 +124,99 @@ class PurchasingInboundApiTest extends TestCase
             ->assertJsonPath('status', 'error');
     }
 
+    public function test_purchase_order_update_replaces_lines_when_draft(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $productOne = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+        $productTwo = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $po = $this->postJson('/api/purchase-orders', [
+            'po_number' => 'PO-200001',
+            'po_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'remarks' => 'Original remarks',
+            'lines' => [
+                [
+                    'product_id' => $productOne->id,
+                    'ordered_qty' => 2,
+                    'unit_price' => 11,
+                ],
+            ],
+        ])->assertCreated();
+
+        $poId = (int) $po->json('data.id');
+
+        $this->patchJson('/api/purchase-orders/'.$poId, [
+            'po_date' => now()->addDay()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'expected_delivery_date' => now()->addDays(2)->toDateString(),
+            'remarks' => 'Updated remarks',
+            'lines' => [
+                [
+                    'product_id' => $productTwo->id,
+                    'ordered_qty' => 5,
+                    'unit_price' => 8.5,
+                    'remarks' => 'New line',
+                ],
+            ],
+        ])->assertOk()
+            ->assertJsonPath('data.remarks', 'Updated remarks')
+            ->assertJsonPath('data.lines.0.product_id', $productTwo->id)
+            ->assertJsonPath('data.lines.0.ordered_qty', 5)
+            ->assertJsonPath('data.lines.0.subtotal', '42.50');
+
+        $this->assertDatabaseHas('purchase_orders', [
+            'id' => $poId,
+            'remarks' => 'Updated remarks',
+        ]);
+        $this->assertDatabaseHas('purchase_order_lines', [
+            'purchase_order_id' => $poId,
+            'product_id' => $productTwo->id,
+            'ordered_qty' => 5,
+        ]);
+    }
+
+    public function test_purchase_order_update_rejects_non_draft_orders(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $po = $this->postJson('/api/purchase-orders', [
+            'po_number' => 'PO-200002',
+            'po_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [
+                [
+                    'product_id' => $product->id,
+                    'ordered_qty' => 2,
+                    'unit_price' => 10,
+                ],
+            ],
+        ])->assertCreated();
+
+        $poId = (int) $po->json('data.id');
+        $this->patchJson('/api/purchase-orders/'.$poId.'/issue')->assertOk();
+
+        $this->patchJson('/api/purchase-orders/'.$poId, [
+            'po_date' => now()->addDay()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [
+                [
+                    'product_id' => $product->id,
+                    'ordered_qty' => 3,
+                    'unit_price' => 12,
+                ],
+            ],
+        ])->assertUnprocessable()
+            ->assertJsonPath('status', 'error');
+    }
+
     public function test_stock_in_tracks_partial_receive_then_auto_completes_po(): void
     {
         $admin = User::factory()->admin()->create();

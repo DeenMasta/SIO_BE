@@ -12,4 +12,8 @@ interface PurchaseOrderRepository
     public function findOrFail(int $id): PurchaseOrder;
 
     public function createWithLines(array $data): PurchaseOrder;
+
+    public function update(PurchaseOrder $purchaseOrder, array $data): PurchaseOrder;
+
+    public function delete(PurchaseOrder $purchaseOrder): void;
 }

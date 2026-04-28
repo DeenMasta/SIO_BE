@@ -33,4 +33,26 @@ class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
 
         return $purchaseOrder->fresh('lines.product');
     }
+
+    public function update(PurchaseOrder $purchaseOrder, array $data): PurchaseOrder
+    {
+        $lines = $data['lines'];
+        unset($data['lines']);
+
+        $purchaseOrder->update($data);
+        $purchaseOrder->lines()->delete();
+
+        foreach ($lines as $line) {
+            $line['subtotal'] = (float) $line['ordered_qty'] * (float) $line['unit_price'];
+            $line['received_qty'] = 0;
+            $purchaseOrder->lines()->create($line);
+        }
+
+        return $purchaseOrder->fresh('lines.product');
+    }
+
+    public function delete(PurchaseOrder $purchaseOrder): void
+    {
+        $purchaseOrder->delete();
+    }
 }

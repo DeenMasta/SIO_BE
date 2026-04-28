@@ -42,7 +42,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::apiResource('suppliers', SupplierController::class);
     Route::apiResource('customers', CustomerController::class);
 
-    Route::apiResource('purchase-orders', PurchaseOrderController::class)->only(['index', 'store', 'show']);
+    Route::apiResource('purchase-orders', PurchaseOrderController::class)->only(['index', 'store', 'show', 'update', 'destroy']);
     Route::patch('purchase-orders/{purchaseOrder}/issue', [PurchaseOrderController::class, 'issue']);
     Route::patch('purchase-orders/{purchaseOrder}/complete', [PurchaseOrderController::class, 'complete']);
     Route::patch('purchase-orders/{purchaseOrder}/cancel', [PurchaseOrderController::class, 'cancel']);

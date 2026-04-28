@@ -31,4 +31,14 @@ class PurchaseOrderPolicy
     {
         return $user->isStaff() && $user->isActive();
     }
+
+    public function update(User $user, PurchaseOrder $purchaseOrder): bool
+    {
+        return $user->isStaff() && $user->isActive();
+    }
+
+    public function delete(User $user, PurchaseOrder $purchaseOrder): bool
+    {
+        return $user->isStaff() && $user->isActive();
+    }
 }

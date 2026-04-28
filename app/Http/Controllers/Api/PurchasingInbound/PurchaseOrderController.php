@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api\PurchasingInbound;
 
 use App\Application\PurchasingInbound\PurchaseOrders\UseCases\CreatePurchaseOrderUseCase;
+use App\Application\PurchasingInbound\PurchaseOrders\UseCases\DeletePurchaseOrderUseCase;
 use App\Application\PurchasingInbound\PurchaseOrders\UseCases\ListPurchaseOrdersUseCase;
+use App\Application\PurchasingInbound\PurchaseOrders\UseCases\UpdatePurchaseOrderUseCase;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\ApiResponse;
 use App\Application\Support\DocumentNumberGenerator;
@@ -11,6 +13,7 @@ use App\Domain\PurchasingInbound\Enums\PurchaseOrderStatus;
 use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\PurchasingInbound\PurchaseOrder\StorePurchaseOrderRequest;
+use App\Http\Requests\Api\PurchasingInbound\PurchaseOrder\UpdatePurchaseOrderRequest;
 use App\Http\Resources\Api\PurchasingInbound\PurchaseOrderResource;
 use App\Models\PurchaseOrder;
 use Illuminate\Http\JsonResponse;
@@ -22,6 +25,8 @@ class PurchaseOrderController extends Controller
     public function __construct(
         private readonly ListPurchaseOrdersUseCase $listPurchaseOrders,
         private readonly CreatePurchaseOrderUseCase $createPurchaseOrder,
+        private readonly UpdatePurchaseOrderUseCase $updatePurchaseOrder,
+        private readonly DeletePurchaseOrderUseCase $deletePurchaseOrder,
         private readonly AuditLogger $auditLogger,
         private readonly DocumentNumberGenerator $documentNumberGenerator,
     ) {
@@ -70,6 +75,27 @@ class PurchaseOrderController extends Controller
         $this->authorize('view', $purchaseOrder);
 
         return ApiResponse::success(new PurchaseOrderResource($purchaseOrder->load('lines.product')), 'Purchase order retrieved successfully.');
+    }
+
+    public function update(UpdatePurchaseOrderRequest $request, PurchaseOrder $purchaseOrder): JsonResponse
+    {
+        $this->authorize('update', $purchaseOrder);
+
+        $payload = $request->validated();
+        $payload['id'] = $purchaseOrder->id;
+
+        $updated = $this->updatePurchaseOrder->execute($payload);
+
+        return ApiResponse::success(new PurchaseOrderResource($updated->load('lines.product')), 'Purchase order updated successfully.');
+    }
+
+    public function destroy(PurchaseOrder $purchaseOrder): JsonResponse
+    {
+        $this->authorize('delete', $purchaseOrder);
+
+        $this->deletePurchaseOrder->execute($purchaseOrder->id);
+
+        return ApiResponse::success(null, 'Purchase order deleted successfully.');
     }
 
     public function issue(PurchaseOrder $purchaseOrder, Request $request): JsonResponse
