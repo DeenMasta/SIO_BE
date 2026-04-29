@@ -44,10 +44,11 @@ class PostQcDocumentUseCase implements UseCase
         $documentNumber = (string) $data['document_number'];
         $date           = (string) $data['date'];
         $picId          = (int) $data['pic_id'];
+        $stockInId      = (int) $data['stock_in_id'];
         $remarks        = ! empty($data['remarks']) ? (string) $data['remarks'] : null;
         $lines          = (array) ($data['lines'] ?? []);
 
-        return DB::transaction(function () use ($documentNumber, $date, $picId, $remarks, $lines): QcDocument {
+        return DB::transaction(function () use ($documentNumber, $date, $picId, $stockInId, $remarks, $lines): QcDocument {
             $stockItemIds = array_column($lines, 'stock_item_id');
 
             $stockItemsCollection = StockItem::query()
@@ -88,6 +89,7 @@ class PostQcDocumentUseCase implements UseCase
                 'document_number' => $documentNumber,
                 'date'            => $date,
                 'pic_id'          => $picId,
+                'stock_in_id'     => $stockInId,
                 'status'          => 'POSTED',
                 'remarks'         => $remarks,
             ]);

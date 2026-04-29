@@ -78,15 +78,13 @@ class PostStockInUseCase implements UseCase
                 $product = $purchaseOrderLine?->product ?? Product::query()->findOrFail((int) $line['product_id']);
                 $affectedProductIds[] = (int) $product->id;
                 $receivedQty = (int) $line['received_qty'];
-                $lineCondition = $this->resolveLineCondition($line, $receivedQty);
-                $unitReceipts = $this->buildUnitReceipts($line, $receivedQty, $lineCondition);
                 $allowGeneratedSerials = (bool) ($line['allow_generated_serials'] ?? false);
+                $unitReceipts = $this->buildUnitReceipts($line, $receivedQty);
 
                 $stockInLine = $stockIn->lines()->create([
                     'purchase_order_line_id' => $purchaseOrderLine?->id,
                     'product_id' => $product->id,
                     'received_qty' => $receivedQty,
-                    'condition_at_receiving' => $lineCondition,
                     'remarks' => $line['remarks'] ?? null,
                 ]);
 
@@ -105,7 +103,6 @@ class PostStockInUseCase implements UseCase
 
                     foreach ($unitReceipts as $unitReceipt) {
                         $incomingSerial = trim((string) ($unitReceipt['serial_number'] ?? ''));
-                        $itemCondition = trim((string) ($unitReceipt['condition'] ?? '')) ?: $lineCondition;
                         $itemRemarks = $unitReceipt['remarks'] ?? ($line['remarks'] ?? null);
 
                         if ($incomingSerial === '' && ! $allowGeneratedSerials) {
@@ -127,7 +124,6 @@ class PostStockInUseCase implements UseCase
                             'factory_serial_number'  => $incomingSerial !== '' ? $incomingSerial : null,
                             'serial_source'          => $serialSource,
                             'current_status'         => StockItemStatus::InStock,
-                            'received_condition'     => $itemCondition !== '' ? $itemCondition : null,
                             'qc_status'              => StockItemQcStatus::Pending,
                             'is_available'           => true,
                             'last_movement_at'       => now(),
@@ -157,7 +153,6 @@ class PostStockInUseCase implements UseCase
                     for ($i = 0; $i < $receivedQty; $i++) {
                         $unitReceipt = $unitReceipts[$i] ?? [];
                         $incomingSerial = trim((string) ($unitReceipt['serial_number'] ?? ''));
-                        $itemCondition = trim((string) ($unitReceipt['condition'] ?? '')) ?: $lineCondition;
                         $itemRemarks = $unitReceipt['remarks'] ?? ($line['remarks'] ?? null);
 
                         $serialValue = $incomingSerial !== ''
@@ -173,7 +168,6 @@ class PostStockInUseCase implements UseCase
                             'factory_serial_number'  => $incomingSerial !== '' ? $incomingSerial : null,
                             'serial_source'          => $serialSource,
                             'current_status'         => StockItemStatus::InStock,
-                            'received_condition'     => $itemCondition !== '' ? $itemCondition : null,
                             'qc_status'              => StockItemQcStatus::Pending,
                             'is_available'           => true,
                             'last_movement_at'       => now(),
@@ -320,50 +314,18 @@ class PostStockInUseCase implements UseCase
 
     /**
      * @param  array<string, mixed>  $line
+     * @return array<int, array{serial_number:string, remarks:?string}>
      */
-    private function resolveLineCondition(array $line, int $receivedQty): ?string
-    {
-        $lineCondition = trim((string) ($line['condition_at_receiving'] ?? ''));
-        if ($lineCondition !== '') {
-            return $lineCondition;
-        }
-
-        $unitConditions = array_values(array_filter(array_map(
-            static fn (mixed $unit): string => trim((string) (is_array($unit) ? ($unit['condition'] ?? '') : '')),
-            Arr::wrap($line['unit_receipts'] ?? []),
-        )));
-
-        if ($unitConditions === []) {
-            return null;
-        }
-
-        $unique = array_values(array_unique($unitConditions));
-        if (count($unique) === 1) {
-            return $unique[0];
-        }
-
-        if (count($unitConditions) === $receivedQty) {
-            return 'MIXED';
-        }
-
-        return null;
-    }
-
-    /**
-     * @param  array<string, mixed>  $line
-     * @return array<int, array{serial_number:string, condition:string, remarks:?string}>
-     */
-    private function buildUnitReceipts(array $line, int $receivedQty, ?string $fallbackCondition): array
+    private function buildUnitReceipts(array $line, int $receivedQty): array
     {
         $unitReceiptsInput = Arr::wrap($line['unit_receipts'] ?? []);
 
         if ($unitReceiptsInput !== []) {
-            return array_map(static function (mixed $unit) use ($fallbackCondition): array {
+            return array_map(static function (mixed $unit): array {
                 $entry = is_array($unit) ? $unit : [];
 
                 return [
                     'serial_number' => trim((string) ($entry['serial_number'] ?? '')),
-                    'condition' => trim((string) ($entry['condition'] ?? '')) ?: (string) ($fallbackCondition ?? ''),
                     'remarks' => array_key_exists('remarks', $entry)
                         ? (string) ($entry['remarks'] ?? '')
                         : null,
@@ -376,15 +338,13 @@ class PostStockInUseCase implements UseCase
         if ($serials !== []) {
             return array_map(static fn (string $serial): array => [
                 'serial_number' => trim($serial),
-                'condition' => (string) ($fallbackCondition ?? ''),
-                'remarks' => null,
+                'remarks'       => null,
             ], $serials);
         }
 
         return array_fill(0, $receivedQty, [
             'serial_number' => '',
-            'condition' => (string) ($fallbackCondition ?? ''),
-            'remarks' => null,
+            'remarks'       => null,
         ]);
     }
 

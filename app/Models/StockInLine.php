@@ -16,7 +16,6 @@ class StockInLine extends Model
         'purchase_order_line_id',
         'product_id',
         'received_qty',
-        'condition_at_receiving',
         'remarks',
     ];
 

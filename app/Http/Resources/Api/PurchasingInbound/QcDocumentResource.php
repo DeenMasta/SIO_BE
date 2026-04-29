@@ -18,6 +18,7 @@ class QcDocumentResource extends JsonResource
             'date' => $this->date?->format('Y-m-d'),
             'pic_id' => $this->pic_id,
             'pic_name' => $this->whenLoaded('pic', fn () => $this->pic->name),
+            'stock_in_id' => $this->stock_in_id,
             'status' => $this->status,
             'remarks' => $this->remarks,
             'checks_count' => $this->checks_count,

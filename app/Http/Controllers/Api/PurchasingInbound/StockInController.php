@@ -7,10 +7,12 @@ use App\Application\PurchasingInbound\StockIn\UseCases\ListStockInsUseCase;
 use App\Application\PurchasingInbound\StockIn\UseCases\PostStockInUseCase;
 use App\Application\Support\ApiResponse;
 use App\Application\Support\DocumentNumberGenerator;
+use App\Domain\InventoryCore\Enums\StockItemQcStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\PurchasingInbound\StockIn\PostStockInRequest;
 use App\Http\Resources\Api\PurchasingInbound\StockInResource;
 use App\Models\StockIn;
+use App\Models\StockItem;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -67,5 +69,42 @@ class StockInController extends Controller
         $this->authorize('view', $stockIn);
 
         return ApiResponse::success(new StockInResource($stockIn), 'Stock in retrieved successfully.');
+    }
+
+    /**
+     * Returns all PENDING QC stock items that belong to the given stock-in session.
+     * Used by the QC module to auto-populate the QC checklist.
+     */
+    public function pendingQcItems(int $id): JsonResponse
+    {
+        $stockIn = $this->stockIns->findOrFail($id);
+        $this->authorize('view', $stockIn);
+
+        $items = StockItem::query()
+            ->with(['product.conditions', 'product.accessories'])
+            ->whereHas('stockInLine', fn ($q) => $q->where('stock_in_id', $id))
+            ->where('qc_status', StockItemQcStatus::Pending->value)
+            ->orderBy('id')
+            ->get();
+
+        $mapped = $items->map(fn (StockItem $item): array => [
+            'id'             => $item->id,
+            'serial_number'  => $item->serial_number,
+            'product_id'     => $item->product_id,
+            'product_name'   => $item->product?->product_name,
+            'qc_status'      => $item->qc_status?->value,
+            'conditions'     => ($item->product?->conditions ?? collect())
+                ->map(fn ($c): string => (string) $c->condition_name)
+                ->filter(fn (string $v): bool => $v !== '')
+                ->values()
+                ->toArray(),
+            'accessories'    => ($item->product?->accessories ?? collect())
+                ->map(fn ($a): string => (string) $a->accessory_name)
+                ->filter(fn (string $v): bool => $v !== '')
+                ->values()
+                ->toArray(),
+        ]);
+
+        return ApiResponse::success($mapped, 'Pending QC items for stock-in retrieved successfully.');
     }
 }

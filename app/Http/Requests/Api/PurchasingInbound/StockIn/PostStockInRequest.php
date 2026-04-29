@@ -29,7 +29,6 @@ class PostStockInRequest extends StrictFormRequest
             'lines.*.purchase_order_line_id' => ['nullable', 'integer', 'exists:purchase_order_lines,id'],
             'lines.*.product_id' => ['nullable', 'integer', 'exists:products,id'],
             'lines.*.received_qty' => ['required', 'integer', 'min:1'],
-            'lines.*.condition_at_receiving' => ['nullable', 'string', 'max:50'],
             'lines.*.remarks' => ['nullable', 'string', 'max:2000'],
             'lines.*.allow_generated_serials' => ['nullable', 'boolean'],
 
@@ -38,7 +37,6 @@ class PostStockInRequest extends StrictFormRequest
 
             'lines.*.unit_receipts' => ['nullable', 'array'],
             'lines.*.unit_receipts.*.serial_number' => ['nullable', 'string', 'max:80', 'distinct'],
-            'lines.*.unit_receipts.*.condition' => ['nullable', 'string', 'max:50'],
             'lines.*.unit_receipts.*.remarks' => ['nullable', 'string', 'max:2000'],
         ];
     }
@@ -68,7 +66,6 @@ class PostStockInRequest extends StrictFormRequest
 
                         return [
                             'serial_number' => trim((string) ($entry['serial_number'] ?? '')),
-                            'condition' => trim((string) ($entry['condition'] ?? '')),
                             'remarks' => array_key_exists('remarks', $entry)
                                 ? trim((string) $entry['remarks'])
                                 : null,

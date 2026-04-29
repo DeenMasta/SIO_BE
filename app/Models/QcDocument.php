@@ -17,6 +17,7 @@ class QcDocument extends Model
         'document_number',
         'date',
         'pic_id',
+        'stock_in_id',
         'status',
         'remarks',
     ];
@@ -26,6 +27,11 @@ class QcDocument extends Model
         return [
             'date' => 'date',
         ];
+    }
+
+    public function stockIn(): BelongsTo
+    {
+        return $this->belongsTo(StockIn::class);
     }
 
     public function pic(): BelongsTo

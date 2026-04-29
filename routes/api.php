@@ -51,6 +51,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::patch('sale-orders/{saleOrder}/confirm', [SaleOrderController::class, 'confirm']);
     Route::patch('sale-orders/{saleOrder}/cancel', [SaleOrderController::class, 'cancel']);
 
+    Route::get('stock-ins/{stockIn}/pending-qc-items', [StockInController::class, 'pendingQcItems']);
     Route::apiResource('stock-ins', StockInController::class)->only(['index', 'store', 'show']);
     Route::apiResource('qc-documents', QcDocumentController::class)->only(['index', 'store', 'show', 'update'])->middleware('can:access-staff');
     Route::get('stock-outs/serial-options', [StockOutController::class, 'serialOptions']);

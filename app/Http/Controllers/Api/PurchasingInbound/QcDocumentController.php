@@ -58,6 +58,7 @@ class QcDocumentController extends Controller
     {
         $payload = $request->validated();
         $payload['pic_id'] = (int) $request->user()->id;
+        $payload['stock_in_id'] = (int) ($payload['stock_in_id'] ?? 0);
         $payload['document_number'] = trim((string) ($payload['document_number'] ?? '')) !== ''
             ? trim((string) $payload['document_number'])
             : $this->documentNumberGenerator->generateQcDocumentNumber();
