@@ -6,6 +6,8 @@ use App\Http\Controllers\Api\IdentityAccess\UserManagementController;
 use App\Http\Controllers\Api\MasterData\CustomerController;
 use App\Http\Controllers\Api\MasterData\ProductController;
 use App\Http\Controllers\Api\MasterData\SupplierController;
+use App\Http\Controllers\Api\MasterData\PackageController;
+
 use App\Http\Controllers\Api\PurchasingInbound\PurchaseOrderController;
 use App\Http\Controllers\Api\PurchasingInbound\StockInController;
 use App\Http\Controllers\Api\PurchasingInbound\QcDocumentController;
@@ -41,6 +43,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::apiResource('products', ProductController::class);
     Route::apiResource('suppliers', SupplierController::class);
     Route::apiResource('customers', CustomerController::class);
+    Route::apiResource('packages', PackageController::class);
 
     Route::apiResource('purchase-orders', PurchaseOrderController::class)->only(['index', 'store', 'show', 'update', 'destroy']);
     Route::patch('purchase-orders/{purchaseOrder}/issue', [PurchaseOrderController::class, 'issue']);

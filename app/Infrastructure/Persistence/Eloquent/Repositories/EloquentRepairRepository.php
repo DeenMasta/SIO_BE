@@ -10,12 +10,27 @@ class EloquentRepairRepository implements RepairRepository
 {
     public function paginate(int $perPage = 15): LengthAwarePaginator
     {
-        return Repair::query()->latest('id')->paginate($perPage);
+        return Repair::query()
+            ->with([
+                'customer',
+                'stockItem.product',
+                'createdByUser',
+                'statusHistory.changedBy',
+            ])
+            ->latest('id')
+            ->paginate($perPage);
     }
 
     public function findOrFail(int $id): Repair
     {
-        return Repair::query()->findOrFail($id);
+        return Repair::query()
+            ->with([
+                'customer',
+                'stockItem.product',
+                'createdByUser',
+                'statusHistory.changedBy',
+            ])
+            ->findOrFail($id);
     }
 
     public function create(array $data): Repair

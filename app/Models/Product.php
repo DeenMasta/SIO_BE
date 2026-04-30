@@ -50,4 +50,11 @@ class Product extends Model
     {
         return $this->hasMany(ProductCondition::class)->orderBy('id');
     }
+
+    public function packages(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(Package::class)
+                    ->withPivot('quantity')
+                    ->withTimestamps();
+    }
 }

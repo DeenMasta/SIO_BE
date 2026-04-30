@@ -10,17 +10,17 @@ class EloquentStockOutRepository implements StockOutRepository
 {
     public function paginate(int $perPage = 15): LengthAwarePaginator
     {
-        return StockOut::query()->with('lines.lineItems')->latest('id')->paginate($perPage);
+        return StockOut::query()->with('lines.lineItems.stockItem')->latest('id')->paginate($perPage);
     }
 
     public function findOrFail(int $id): StockOut
     {
-        return StockOut::query()->with('lines.lineItems')->findOrFail($id);
+        return StockOut::query()->with('lines.lineItems.stockItem')->findOrFail($id);
     }
 
     public function findByIdempotencyKey(string $idempotencyKey): ?StockOut
     {
-        return StockOut::query()->with('lines.lineItems')->where('idempotency_key', $idempotencyKey)->first();
+        return StockOut::query()->with('lines.lineItems.stockItem')->where('idempotency_key', $idempotencyKey)->first();
     }
 
     public function create(array $data): StockOut

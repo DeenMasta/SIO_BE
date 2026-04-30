@@ -8,14 +8,27 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 
 class EloquentReturnToSupplierRepository implements ReturnToSupplierRepository
 {
+    private const DETAIL_RELATIONS = [
+        'supplier',
+        'stockIn',
+        'lines.product',
+        'lines.stockItem.product',
+        'lines.stockInLine.product',
+    ];
+
     public function paginate(int $perPage = 15): LengthAwarePaginator
     {
-        return ReturnToSupplier::query()->with('lines')->latest('id')->paginate($perPage);
+        return ReturnToSupplier::query()
+            ->with(self::DETAIL_RELATIONS)
+            ->latest('id')
+            ->paginate($perPage);
     }
 
     public function findOrFail(int $id): ReturnToSupplier
     {
-        return ReturnToSupplier::query()->with('lines')->findOrFail($id);
+        return ReturnToSupplier::query()
+            ->with(self::DETAIL_RELATIONS)
+            ->findOrFail($id);
     }
 
     public function create(array $data): ReturnToSupplier

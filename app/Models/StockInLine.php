@@ -45,4 +45,9 @@ class StockInLine extends Model
     {
         return $this->hasMany(StockItem::class);
     }
+
+    public function returnToSupplierLines(): HasMany
+    {
+        return $this->hasMany(ReturnToSupplierLine::class);
+    }
 }

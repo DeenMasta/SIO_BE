@@ -40,6 +40,14 @@ class Repair extends Model
     }
 
     /**
+     * @return BelongsTo<Customer, Repair>
+     */
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
+    }
+
+    /**
      * @return BelongsTo<User, Repair>
      */
     public function createdByUser(): BelongsTo

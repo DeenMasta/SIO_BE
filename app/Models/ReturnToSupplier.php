@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Domain\ExceptionsReturns\Enums\ExceptionTransactionStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ReturnToSupplier extends Model
@@ -34,5 +35,15 @@ class ReturnToSupplier extends Model
     public function lines(): HasMany
     {
         return $this->hasMany(ReturnToSupplierLine::class);
+    }
+
+    public function stockIn(): BelongsTo
+    {
+        return $this->belongsTo(StockIn::class);
+    }
+
+    public function supplier(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class);
     }
 }

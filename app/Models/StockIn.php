@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Domain\PurchasingInbound\Enums\StockInStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class StockIn extends Model
@@ -34,5 +35,10 @@ class StockIn extends Model
     public function lines(): HasMany
     {
         return $this->hasMany(StockInLine::class);
+    }
+
+    public function supplier(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class);
     }
 }
