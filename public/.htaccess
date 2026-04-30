@@ -5,6 +5,18 @@
 
     RewriteEngine On
 
+    # ----------------------------------------------------------------------
+    # FORCE CORS HEADERS
+    # ----------------------------------------------------------------------
+    Header always set Access-Control-Allow-Origin "https://sio.mysztechnology.com"
+    Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    Header always set Access-Control-Allow-Headers "Origin, X-Requested-With, Content-Type, Accept, Authorization, X-XSRF-TOKEN"
+    Header always set Access-Control-Allow-Credentials "true"
+
+    # Handle OPTIONS Preflight Requests Instantly
+    RewriteCond %{REQUEST_METHOD} OPTIONS
+    RewriteRule ^(.*)$ $1 [R=200,L]
+
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
