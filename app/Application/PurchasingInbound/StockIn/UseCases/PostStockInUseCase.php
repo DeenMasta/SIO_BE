@@ -10,7 +10,6 @@ use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\SerialSource;
 use App\Domain\InventoryCore\Enums\StockItemQcStatus;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
-use App\Domain\MasterData\Enums\ProductType;
 use App\Domain\PurchasingInbound\Enums\PurchaseOrderStatus;
 use App\Domain\PurchasingInbound\Enums\StockInStatus;
 use App\Domain\ReportingAudit\Enums\AuditAction;
@@ -92,12 +91,10 @@ class PostStockInUseCase implements UseCase
                     $this->applyReceiptToPurchaseOrderLine($purchaseOrderLine, $receivedQty);
                 }
 
-                $serials = array_values(array_map('strval', Arr::wrap($line['serial_numbers'] ?? [])));
-
-                if ($product->product_type === ProductType::Device) {
+                if ($product->requiresSerialNumber()) {
                     if (count($unitReceipts) !== $receivedQty) {
                         throw ValidationException::withMessages([
-                            'lines' => ['DEVICE items require one unit_receipt per received unit.'],
+                            'lines' => ['Serialized items require one unit_receipt per received unit.'],
                         ]);
                     }
 
@@ -105,55 +102,11 @@ class PostStockInUseCase implements UseCase
                         $incomingSerial = trim((string) ($unitReceipt['serial_number'] ?? ''));
                         $itemRemarks = $unitReceipt['remarks'] ?? ($line['remarks'] ?? null);
 
-                        if ($incomingSerial === '' && ! $allowGeneratedSerials) {
+                        if ($product->product_type->value === 'DEVICE' && $incomingSerial === '' && ! $allowGeneratedSerials) {
                             throw ValidationException::withMessages([
-                                'lines' => ['DEVICE items require serial_number for every unit unless allow_generated_serials is enabled.'],
+                                'lines' => ['Serialized DEVICE items require serial_number for every unit unless allow_generated_serials is enabled.'],
                             ]);
                         }
-
-                        $serialValue = $incomingSerial !== ''
-                            ? $incomingSerial
-                            : $this->serialNumberGenerator->generate($product->product_code);
-
-                        $serialSource = $incomingSerial !== '' ? SerialSource::Factory : SerialSource::Generated;
-
-                        $stockItem = StockItem::query()->create([
-                            'product_id'             => $product->id,
-                            'stock_in_line_id'       => $stockInLine->id,
-                            'serial_number'          => $serialValue,
-                            'factory_serial_number'  => $incomingSerial !== '' ? $incomingSerial : null,
-                            'serial_source'          => $serialSource,
-                            'current_status'         => StockItemStatus::InStock,
-                            'qc_status'              => StockItemQcStatus::Pending,
-                            'is_available'           => true,
-                            'last_movement_at'       => now(),
-                            'remarks'                => $itemRemarks,
-                        ]);
-
-                        StockMovement::query()->create([
-                            'movement_datetime' => now(),
-                            'product_id' => $product->id,
-                            'stock_item_id' => $stockItem->id,
-                            'movement_type' => MovementType::StockIn,
-                            'reference_table' => 'stock_in_lines',
-                            'reference_id' => $stockInLine->id,
-                            'qty_in' => 1,
-                            'qty_out' => 0,
-                            'to_status' => StockItemStatus::InStock->value,
-                            'performed_by' => (int) $data['stock_in_pic_id'],
-                            'remarks' => $itemRemarks,
-                        ]);
-
-                    }
-
-                    continue;
-                }
-
-                if ($product->product_type === ProductType::Accessory) {
-                    for ($i = 0; $i < $receivedQty; $i++) {
-                        $unitReceipt = $unitReceipts[$i] ?? [];
-                        $incomingSerial = trim((string) ($unitReceipt['serial_number'] ?? ''));
-                        $itemRemarks = $unitReceipt['remarks'] ?? ($line['remarks'] ?? null);
 
                         $serialValue = $incomingSerial !== ''
                             ? $incomingSerial

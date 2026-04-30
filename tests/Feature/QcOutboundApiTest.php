@@ -208,6 +208,54 @@ class QcOutboundApiTest extends TestCase
         ])->assertCreated();
     }
 
+    public function test_non_serialized_accessory_can_stock_out_by_quantity_without_stock_item_ids(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create([
+            'product_code' => 'BST-OUT-1001',
+            'product_type' => 'ACCESSORY',
+            'requires_serial_number' => false,
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-BST-OUT-1001',
+            'stock_in_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [
+                [
+                    'product_id' => $product->id,
+                    'received_qty' => 5,
+                ],
+            ],
+        ])->assertCreated();
+
+        $this->postJson('/api/stock-outs', [
+            'stock_out_number' => 'SOUT-BST-1001',
+            'idempotency_key' => 'idem-bst-1001',
+            'stock_out_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'invoice_number' => 'INV-BST-1001',
+            'lines' => [
+                [
+                    'product_id' => $product->id,
+                    'qty' => 3,
+                ],
+            ],
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('stock_movements', [
+            'product_id' => $product->id,
+            'stock_item_id' => null,
+            'movement_type' => 'STOCK_OUT',
+            'qty_out' => 3,
+        ]);
+        $this->assertDatabaseCount('stock_items', 0);
+    }
+
     /**
      * @return array{Supplier, Product, int, int, int}
      */

@@ -17,6 +17,7 @@ class Product extends Model
         'product_code',
         'product_name',
         'product_type',
+        'requires_serial_number',
         'supplier_id',
         'selling_price',
         'uom',
@@ -30,10 +31,16 @@ class Product extends Model
     {
         return [
             'product_type' => ProductType::class,
+            'requires_serial_number' => 'boolean',
             'status' => RecordStatus::class,
             'selling_price' => 'decimal:2',
             'reorder_level' => 'integer',
         ];
+    }
+
+    public function requiresSerialNumber(): bool
+    {
+        return (bool) $this->requires_serial_number;
     }
 
     public function supplier(): BelongsTo

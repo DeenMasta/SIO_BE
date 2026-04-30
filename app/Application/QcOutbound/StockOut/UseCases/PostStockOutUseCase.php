@@ -9,7 +9,6 @@ use App\Application\Support\StockBalanceUpdater;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemQcStatus;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
-use App\Domain\MasterData\Enums\ProductType;
 use App\Domain\QcOutbound\Enums\StockOutStatus;
 use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Domain\SalesOutbound\Enums\SaleOrderStatus;
@@ -137,7 +136,7 @@ class PostStockOutUseCase implements UseCase
                     'remarks' => $line['remarks'] ?? null,
                 ]);
 
-                if (in_array($product->product_type, [ProductType::Device, ProductType::Accessory], true)) {
+                if ($product->requiresSerialNumber()) {
                     $stockItemIds = array_values(array_map('intval', Arr::wrap($line['stock_item_ids'] ?? [])));
 
                     if (count($stockItemIds) !== count(array_unique($stockItemIds))) {

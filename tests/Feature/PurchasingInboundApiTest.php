@@ -485,4 +485,40 @@ class PurchasingInboundApiTest extends TestCase
             ],
         ])->assertUnprocessable();
     }
+
+    public function test_stock_in_allows_non_serialized_accessory_without_serial_numbers(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'product_code' => 'BST-1001',
+            'product_type' => 'ACCESSORY',
+            'requires_serial_number' => false,
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $response = $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-900001-NS',
+            'stock_in_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [
+                [
+                    'product_id' => $product->id,
+                    'received_qty' => 10,
+                ],
+            ],
+        ])->assertCreated();
+
+        $stockInLineId = (int) $response->json('data.lines.0.id');
+
+        $this->assertDatabaseHas('stock_movements', [
+            'product_id' => $product->id,
+            'stock_item_id' => null,
+            'reference_id' => $stockInLineId,
+            'qty_in' => 10,
+            'qty_out' => 0,
+        ]);
+        $this->assertDatabaseCount('stock_items', 0);
+    }
 }

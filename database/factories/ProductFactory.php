@@ -19,10 +19,13 @@ class ProductFactory extends Factory
      */
     public function definition(): array
     {
+        $productType = fake()->randomElement(['DEVICE', 'ACCESSORY', 'CONSUMABLE']);
+
         return [
             'product_code' => strtoupper(fake()->bothify('PRD-####')),
             'product_name' => fake()->words(3, true),
-            'product_type' => fake()->randomElement(['DEVICE', 'ACCESSORY', 'CONSUMABLE']),
+            'product_type' => $productType,
+            'requires_serial_number' => in_array($productType, ['DEVICE', 'ACCESSORY'], true),
             'supplier_id' => Supplier::factory(),
             'selling_price' => fake()->randomFloat(2, 10, 1000),
             'uom' => fake()->randomElement(['PCS', 'BOX']),

@@ -35,6 +35,7 @@ class MasterDataApiTest extends TestCase
             'product_code' => 'PRD-0001',
             'product_name' => 'Router X',
             'product_type' => 'DEVICE',
+            'requires_serial_number' => true,
             'supplier_id' => $supplier->id,
             'selling_price' => 150,
             'uom' => 'PCS',
@@ -53,6 +54,7 @@ class MasterDataApiTest extends TestCase
             'product_code' => 'PRD-1001',
             'product_name' => 'Barcode Scanner',
             'product_type' => 'DEVICE',
+            'requires_serial_number' => true,
             'supplier_id' => $supplier->id,
             'selling_price' => 450.75,
             'uom' => 'PCS',
@@ -81,6 +83,7 @@ class MasterDataApiTest extends TestCase
         $created
             ->assertJsonPath('data.supplier_id', $supplier->id)
             ->assertJsonPath('data.supplier.id', $supplier->id)
+            ->assertJsonPath('data.requires_serial_number', true)
             ->assertJsonCount(2, 'data.accessories')
             ->assertJsonPath('data.accessories.0.accessory_name', 'Charging Cable')
             ->assertJsonPath('data.accessories.1.accessory_name', 'Power Adapter')
@@ -89,6 +92,7 @@ class MasterDataApiTest extends TestCase
 
         $this->patchJson('/api/products/'.$id, [
             'product_name' => 'Barcode Scanner Pro',
+            'requires_serial_number' => false,
             'accessories' => [
                 [
                     'accessory_name' => 'Charging Dock',
@@ -102,6 +106,7 @@ class MasterDataApiTest extends TestCase
         ])
             ->assertOk()
             ->assertJsonPath('data.product_name', 'Barcode Scanner Pro')
+            ->assertJsonPath('data.requires_serial_number', false)
             ->assertJsonCount(1, 'data.accessories')
             ->assertJsonPath('data.accessories.0.accessory_name', 'Charging Dock')
             ->assertJsonCount(2, 'data.conditions')
@@ -145,6 +150,7 @@ class MasterDataApiTest extends TestCase
             'product_code' => 'PRD-2222',
             'product_name' => 'Duplicate Product',
             'product_type' => 'ACCESSORY',
+            'requires_serial_number' => true,
             'supplier_id' => $supplier->id,
             'selling_price' => 9.99,
             'uom' => 'PCS',
