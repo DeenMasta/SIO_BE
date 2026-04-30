@@ -10,7 +10,7 @@ use App\Domain\MasterData\Enums\ProductType;
 class MasterDataSeeder extends Seeder
 {
     /**
-     * Run the database seeds.
+     * Run the database seeds.sdssdsdssdsdssds
      */
     public function run(): void
     {
