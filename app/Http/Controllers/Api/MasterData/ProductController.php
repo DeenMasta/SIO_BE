@@ -30,19 +30,13 @@ class ProductController extends Controller
 
         $products = $this->listProducts->execute([
             'per_page' => (int) $request->integer('per_page', 15),
+            'q' => trim((string) $request->query('q', '')),
         ]);
 
-        return ApiResponse::success(
+        return ApiResponse::paginated(
+            $products,
             ProductResource::collection($products->items()),
             'Products retrieved successfully.',
-            meta: [
-                'pagination' => [
-                    'current_page' => $products->currentPage(),
-                    'per_page' => $products->perPage(),
-                    'total' => $products->total(),
-                    'last_page' => $products->lastPage(),
-                ],
-            ],
         );
     }
 

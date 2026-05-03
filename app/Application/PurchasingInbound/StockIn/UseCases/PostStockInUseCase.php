@@ -118,7 +118,6 @@ class PostStockInUseCase implements UseCase
                             'product_id'             => $product->id,
                             'stock_in_line_id'       => $stockInLine->id,
                             'serial_number'          => $serialValue,
-                            'factory_serial_number'  => $incomingSerial !== '' ? $incomingSerial : null,
                             'serial_source'          => $serialSource,
                             'current_status'         => StockItemStatus::InStock,
                             'qc_status'              => StockItemQcStatus::Pending,
@@ -361,14 +360,8 @@ class PostStockInUseCase implements UseCase
         /** @var Collection<int, string> $existingSerials */
         $existingSerials = StockItem::query()
             ->whereIn('serial_number', $allSerials)
-            ->orWhereIn('factory_serial_number', $allSerials)
-            ->get(['serial_number', 'factory_serial_number'])
-            ->flatMap(static function (StockItem $item): array {
-                return array_values(array_filter([
-                    (string) ($item->serial_number ?? ''),
-                    (string) ($item->factory_serial_number ?? ''),
-                ]));
-            })
+            ->get(['serial_number'])
+            ->pluck('serial_number')
             ->unique()
             ->values();
 

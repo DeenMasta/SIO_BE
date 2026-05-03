@@ -28,6 +28,7 @@ class UpdateSaleOrderRequest extends StrictFormRequest
             'lines' => ['nullable', 'array', 'min:1'],
             'lines.*.product_id' => ['required_with:lines', 'integer', 'exists:products,id'],
             'lines.*.ordered_qty' => ['required_with:lines', 'integer', 'min:1'],
+            'lines.*.is_free' => ['nullable', 'boolean'],
             'lines.*.unit_price' => ['required_with:lines', 'numeric', 'min:0'],
             'lines.*.remarks' => ['nullable', 'string', 'max:2000'],
         ];

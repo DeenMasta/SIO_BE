@@ -31,7 +31,6 @@ class ReturnToSupplierResource extends JsonResource
                 'product_name' => $line->product?->product_name ?? $line->stockInLine?->product?->product_name,
                 'stock_item_id' => $line->stock_item_id,
                 'serial_number' => $line->stockItem?->serial_number,
-                'factory_serial_number' => $line->stockItem?->factory_serial_number,
                 'qty' => $line->qty,
                 'reason_for_return' => $line->reason_for_return,
                 'remarks' => $line->remarks,

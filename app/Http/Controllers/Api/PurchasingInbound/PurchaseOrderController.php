@@ -9,16 +9,20 @@ use App\Application\PurchasingInbound\PurchaseOrders\UseCases\UpdatePurchaseOrde
 use App\Application\Support\AuditLogger;
 use App\Application\Support\ApiResponse;
 use App\Application\Support\DocumentNumberGenerator;
+use App\Application\ReportingAudit\Reports\Services\ExportService;
 use App\Domain\PurchasingInbound\Enums\PurchaseOrderStatus;
 use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\PurchasingInbound\PurchaseOrder\ExportPurchaseOrderRequest;
 use App\Http\Requests\Api\PurchasingInbound\PurchaseOrder\StorePurchaseOrderRequest;
 use App\Http\Requests\Api\PurchasingInbound\PurchaseOrder\UpdatePurchaseOrderRequest;
 use App\Http\Resources\Api\PurchasingInbound\PurchaseOrderResource;
 use App\Models\PurchaseOrder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PurchaseOrderController extends Controller
 {
@@ -29,6 +33,7 @@ class PurchaseOrderController extends Controller
         private readonly DeletePurchaseOrderUseCase $deletePurchaseOrder,
         private readonly AuditLogger $auditLogger,
         private readonly DocumentNumberGenerator $documentNumberGenerator,
+        private readonly ExportService $exportService,
     ) {
     }
 
@@ -96,6 +101,47 @@ class PurchaseOrderController extends Controller
         $this->deletePurchaseOrder->execute($purchaseOrder->id);
 
         return ApiResponse::success(null, 'Purchase order deleted successfully.');
+    }
+
+    public function export(ExportPurchaseOrderRequest $request): StreamedResponse
+    {
+        $this->authorize('viewAny', PurchaseOrder::class);
+
+        $validated = $request->validated();
+        $format = strtolower((string) ($validated['format'] ?? 'csv'));
+        $filters = collect($validated)->except('format')->toArray();
+
+        $rows = $this->exportRows($filters);
+        $filename = 'purchase-orders-'.now()->format('Ymd_His');
+
+        $this->auditLogger->log(
+            userId: (int) $request->user()->id,
+            moduleName: 'PurchasingInbound',
+            entityName: 'PurchaseOrderExport',
+            entityId: 0,
+            action: AuditAction::Export,
+            newValues: ['filters' => $filters, 'filename' => $filename, 'format' => $format],
+        );
+
+        return $this->exportService->export(
+            rows: $rows,
+            headers: [
+                'po_number',
+                'po_date',
+                'expected_delivery_date',
+                'supplier_code',
+                'supplier_name',
+                'status',
+                'line_count',
+                'ordered_qty',
+                'received_qty',
+                'remaining_qty',
+                'total_amount',
+                'remarks',
+            ],
+            filename: $filename,
+            format: $format,
+        );
     }
 
     public function issue(PurchaseOrder $purchaseOrder, Request $request): JsonResponse
@@ -179,5 +225,67 @@ class PurchaseOrderController extends Controller
         );
 
         return $purchaseOrder;
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return Collection<int, object>
+     */
+    private function exportRows(array $filters): Collection
+    {
+        $query = PurchaseOrder::query()
+            ->from('purchase_orders as po')
+            ->leftJoin('suppliers as s', 's.id', '=', 'po.supplier_id')
+            ->leftJoin('purchase_order_lines as pol', 'pol.purchase_order_id', '=', 'po.id')
+            ->selectRaw('po.po_number')
+            ->selectRaw('po.po_date')
+            ->selectRaw('po.expected_delivery_date')
+            ->selectRaw('s.supplier_code')
+            ->selectRaw('s.supplier_name')
+            ->selectRaw('po.status')
+            ->selectRaw('COUNT(pol.id) as line_count')
+            ->selectRaw('COALESCE(SUM(pol.ordered_qty), 0) as ordered_qty')
+            ->selectRaw('COALESCE(SUM(pol.received_qty), 0) as received_qty')
+            ->selectRaw('COALESCE(SUM(pol.ordered_qty - pol.received_qty), 0) as remaining_qty')
+            ->selectRaw('COALESCE(SUM(pol.subtotal), 0) as total_amount')
+            ->selectRaw('po.remarks')
+            ->groupBy(
+                'po.id',
+                'po.po_number',
+                'po.po_date',
+                'po.expected_delivery_date',
+                's.supplier_code',
+                's.supplier_name',
+                'po.status',
+                'po.remarks',
+            )
+            ->orderByDesc('po.id');
+
+        $search = trim((string) ($filters['q'] ?? ''));
+        if ($search !== '') {
+            $query->where(function ($searchQuery) use ($search): void {
+                $searchQuery->where('po.po_number', 'like', '%'.$search.'%')
+                    ->orWhere('s.supplier_name', 'like', '%'.$search.'%')
+                    ->orWhere('s.supplier_code', 'like', '%'.$search.'%');
+            });
+        }
+
+        if (! empty($filters['date_from'])) {
+            $query->whereDate('po.po_date', '>=', (string) $filters['date_from']);
+        }
+
+        if (! empty($filters['date_to'])) {
+            $query->whereDate('po.po_date', '<=', (string) $filters['date_to']);
+        }
+
+        if (! empty($filters['status'])) {
+            $query->where('po.status', (string) $filters['status']);
+        }
+
+        return $query->get()->map(function (object $row): object {
+            $row->total_amount = number_format((float) $row->total_amount, 2, '.', '');
+
+            return $row;
+        });
     }
 }

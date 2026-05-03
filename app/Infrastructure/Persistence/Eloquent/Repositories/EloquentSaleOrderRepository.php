@@ -36,9 +36,7 @@ class EloquentSaleOrderRepository implements SaleOrderRepository
         $saleOrder = SaleOrder::query()->create($data);
 
         foreach ($lines as $line) {
-            $line['subtotal'] = (float) $line['ordered_qty'] * (float) $line['unit_price'];
-            $line['fulfilled_qty'] = 0;
-            $saleOrder->lines()->create($line);
+            $saleOrder->lines()->create($this->normalizeLine($line));
         }
 
         return $saleOrder->fresh('lines.product');
@@ -54,9 +52,7 @@ class EloquentSaleOrderRepository implements SaleOrderRepository
         if ($lines !== null) {
             $so->lines()->delete();
             foreach ($lines as $line) {
-                $line['subtotal'] = (float) $line['ordered_qty'] * (float) $line['unit_price'];
-                $line['fulfilled_qty'] = 0;
-                $so->lines()->create($line);
+                $so->lines()->create($this->normalizeLine($line));
             }
         }
 
@@ -66,5 +62,22 @@ class EloquentSaleOrderRepository implements SaleOrderRepository
     public function delete(SaleOrder $so): void
     {
         $so->delete();
+    }
+
+    /**
+     * @param  array<string, mixed>  $line
+     * @return array<string, mixed>
+     */
+    private function normalizeLine(array $line): array
+    {
+        $isFree = filter_var($line['is_free'] ?? false, FILTER_VALIDATE_BOOL);
+        $unitPrice = $isFree ? 0.0 : (float) $line['unit_price'];
+
+        $line['is_free'] = $isFree;
+        $line['unit_price'] = $unitPrice;
+        $line['subtotal'] = (float) $line['ordered_qty'] * $unitPrice;
+        $line['fulfilled_qty'] = 0;
+
+        return $line;
     }
 }

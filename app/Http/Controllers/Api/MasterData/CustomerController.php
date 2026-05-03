@@ -59,6 +59,14 @@ class CustomerController extends Controller
     {
         $this->authorize('view', $customer);
 
+        $customer->load([
+            'saleOrders' => fn ($query) => $query
+                ->whereNotNull('invoice_number')
+                ->where('invoice_number', '!=', '')
+                ->orderByDesc('so_date')
+                ->orderByDesc('id'),
+        ]);
+
         return ApiResponse::success(new CustomerResource($customer), 'Customer retrieved successfully.');
     }
 

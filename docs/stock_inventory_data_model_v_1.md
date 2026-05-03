@@ -148,7 +148,6 @@ Use this table only for **devices** and **accessories**.
 - `product_id` FK -> `products.id`
 - `stock_in_line_id` FK -> `stock_in_lines.id`
 - `serial_number` unique
-- `factory_serial_number` unique nullable
 - `serial_source` (`FACTORY`, `GENERATED`)
 - `current_status` (`RECEIVED`, `IN_STOCK`, `DELIVERED`, `UNDER_REPAIR`, `RETURNED_TO_SUPPLIER`, `RETURNED`)
 - `is_available` boolean
@@ -441,7 +440,6 @@ erDiagram
 ### Serial rules
 
 - `serial_number` must be unique
-- `factory_serial_number` must be unique when not null
 - generated format can be: `[PRODUCTCODE]-[YYYYMMDD]-[RUNNING_NO]`
 
 ### Transaction rules

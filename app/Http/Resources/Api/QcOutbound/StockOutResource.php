@@ -33,7 +33,6 @@ class StockOutResource extends JsonResource
                 'dispatched_items' => $line->lineItems->map(fn ($item): array => [
                     'stock_item_id'         => $item->stock_item_id,
                     'serial_number'         => $item->stockItem?->serial_number,
-                    'factory_serial_number' => $item->stockItem?->factory_serial_number,
                 ])->values(),
             ]),
             'created_at' => $this->created_at,

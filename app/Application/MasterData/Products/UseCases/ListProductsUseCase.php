@@ -15,7 +15,8 @@ class ListProductsUseCase implements UseCase
     public function execute(mixed $payload = null): LengthAwarePaginator
     {
         $perPage = is_array($payload) ? (int) ($payload['per_page'] ?? 15) : 15;
+        $filters = is_array($payload) ? $payload : [];
 
-        return $this->products->paginate($perPage > 0 ? $perPage : 15);
+        return $this->products->paginate($perPage > 0 ? $perPage : 15, $filters);
     }
 }

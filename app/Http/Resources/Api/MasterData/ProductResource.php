@@ -17,6 +17,7 @@ class ProductResource extends JsonResource
             'id' => $this->id,
             'product_code' => $this->product_code,
             'product_name' => $this->product_name,
+            'product_model' => $this->product_model,
             'product_type' => $this->product_type?->value,
             'requires_serial_number' => (bool) $this->requires_serial_number,
             'supplier_id' => $this->supplier_id,

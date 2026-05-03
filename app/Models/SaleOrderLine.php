@@ -16,6 +16,7 @@ class SaleOrderLine extends Model
         'product_id',
         'ordered_qty',
         'fulfilled_qty',
+        'is_free',
         'unit_price',
         'subtotal',
         'remarks',
@@ -26,6 +27,9 @@ class SaleOrderLine extends Model
         return [
             'ordered_qty' => 'integer',
             'fulfilled_qty' => 'integer',
+            'is_free' => 'boolean',
+            'unit_price' => 'decimal:2',
+            'subtotal' => 'decimal:2',
         ];
     }
 

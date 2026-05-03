@@ -9,7 +9,6 @@ The core of serial number tracking lives in the **`stock_items`** table. Every s
 | Column | Purpose |
 |---|---|
 | `serial_number` | System SN (unique, always present) |
-| `factory_serial_number` | Manufacturer's SN (nullable, unique) |
 | `serial_source` | `FACTORY` or `GENERATED` — who assigned the SN |
 | `current_status` | Current location/state (see lifecycle below) |
 | `received_condition` | Physical condition when it arrived |
@@ -173,7 +172,7 @@ $table->date('completed_date')->nullable();
 
 ### 7. Expose a rich Serial Number detail page on the frontend
 
-Currently `SearchController::serials()` only returns `id, product_id, serial_number, factory_serial_number, current_status, is_available`. A new endpoint should return the full picture described in Proposal 4, enabling a "Serial Number Passport" page that operations staff can use instantly to answer: *"Where is this unit, who has it, and what's its history?"*
+Currently `SearchController::serials()` only returns `id, product_id, serial_number, current_status, is_available`. A new endpoint should return the full picture described in Proposal 4, enabling a "Serial Number Passport" page that operations staff can use instantly to answer: *"Where is this unit, who has it, and what's its history?"*
 
 ---
 

@@ -256,6 +256,52 @@ class QcOutboundApiTest extends TestCase
         $this->assertDatabaseCount('stock_items', 0);
     }
 
+    public function test_stock_out_export_returns_filtered_csv(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $customer = Customer::factory()->create([
+            'customer_name' => 'Stock Out Export Customer',
+        ]);
+        $product = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'requires_serial_number' => false,
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-STOCKOUT-EXP',
+            'stock_in_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'received_qty' => 6,
+            ]],
+        ])->assertCreated();
+
+        $this->postJson('/api/stock-outs', [
+            'stock_out_number' => 'SOUT-EXPORT-001',
+            'idempotency_key' => 'idem-sout-export-001',
+            'stock_out_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'qty' => 4,
+            ]],
+        ])->assertCreated();
+
+        $response = $this->get('/api/stock-outs/export?q=SOUT-EXPORT&format=csv');
+        $response->assertOk();
+        $response->assertHeader('content-type', 'text/csv; charset=UTF-8');
+
+        $content = $response->streamedContent();
+        $this->assertStringContainsString('stock_out_number', $content);
+        $this->assertStringContainsString('SOUT-EXPORT-001', $content);
+        $this->assertStringContainsString('Stock Out Export Customer', $content);
+        $this->assertStringContainsString('4', $content);
+    }
+
     /**
      * @return array{Supplier, Product, int, int, int}
      */

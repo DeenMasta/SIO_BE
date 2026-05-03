@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Domain\InventoryCore\Enums\MovementType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class StockMovement extends Model
 {
@@ -33,5 +34,10 @@ class StockMovement extends Model
             'qty_in' => 'integer',
             'qty_out' => 'integer',
         ];
+    }
+
+    public function performer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'performed_by');
     }
 }

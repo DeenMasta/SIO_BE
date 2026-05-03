@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\AuditLog;
 use App\Models\Product;
+use App\Models\StockItem;
 use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -63,6 +64,78 @@ class ReportingAuditApiTest extends TestCase
         $this->getJson('/api/reports/stock-movements?movement_type=STOCK_IN')
             ->assertOk()
             ->assertJsonPath('status', 'success');
+    }
+
+    public function test_staff_can_view_inventory_report_with_readable_movement_context(): void
+    {
+        $staff = User::factory()->staff()->create();
+        $supplier = Supplier::factory()->create([
+            'supplier_code' => 'SUP-RPT',
+            'supplier_name' => 'Report Supplier',
+        ]);
+        $product = Product::factory()->create([
+            'product_code' => 'PROD-RPT',
+            'product_name' => 'Report Product',
+            'product_type' => 'DEVICE',
+            'requires_serial_number' => true,
+            'supplier_id' => $supplier->id,
+            'reorder_level' => 3,
+        ]);
+
+        Sanctum::actingAs($staff, ['staff-access']);
+
+        $stockInResponse = $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-RPT-100010',
+            'stock_in_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [
+                [
+                    'product_id' => $product->id,
+                    'received_qty' => 1,
+                    'unit_receipts' => [
+                        ['serial_number' => 'SER-RPT-0001'],
+                    ],
+                ],
+            ],
+        ])->assertCreated();
+
+        $stockInId = (int) $stockInResponse->json('data.id');
+        $stockItem = StockItem::query()->where('product_id', $product->id)->firstOrFail();
+
+        $this->postJson('/api/qc-documents', [
+            'document_number' => 'QC-RPT-100010',
+            'stock_in_id' => $stockInId,
+            'date' => now()->toDateString(),
+            'lines' => [
+                [
+                    'stock_item_id' => $stockItem->id,
+                    'result' => 'PASSED',
+                    'checked_conditions' => [],
+                    'checked_accessories' => [],
+                ],
+            ],
+        ])->assertCreated();
+
+        $listResponse = $this->getJson('/api/reports/inventory?stock_status=low_stock')
+            ->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('data.0.product_code', 'PROD-RPT')
+            ->assertJsonPath('meta.summary.total_products', 1);
+
+        $this->assertSame('Report Supplier', $listResponse->json('data.0.supplier.supplier_name'));
+
+        $this->getJson('/api/reports/inventory/'.$product->id)
+            ->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('data.inventory.product_code', 'PROD-RPT')
+            ->assertJsonPath('data.recent_movements.0.document_number', 'QC-RPT-100010')
+            ->assertJsonPath('data.recent_movements.0.document_type', 'QC Document')
+            ->assertJsonPath('data.recent_movements.0.serial_number', 'SER-RPT-0001')
+            ->assertJsonPath('data.recent_movements.0.performed_by_name', $staff->name)
+            ->assertJsonPath('data.recent_movements.1.document_number', 'SIN-RPT-100010')
+            ->assertJsonPath('data.recent_movements.1.document_type', 'Stock In')
+            ->assertJsonMissingPath('data.recent_movements.0.reference_id')
+            ->assertJsonMissingPath('data.recent_movements.0.reference_table');
     }
 
     public function test_staff_cannot_view_audit_logs_but_admin_can(): void

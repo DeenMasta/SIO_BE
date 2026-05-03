@@ -409,6 +409,41 @@ class PurchasingInboundApiTest extends TestCase
             ->assertJsonPath('data.lines.0.remaining_qty', 3);
     }
 
+    public function test_purchase_order_export_returns_filtered_csv(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create([
+            'supplier_code' => 'SUP-EXP',
+            'supplier_name' => 'Export Supplier',
+        ]);
+        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->postJson('/api/purchase-orders', [
+            'po_number' => 'PO-EXPORT-001',
+            'po_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'status' => 'DRAFT',
+            'remarks' => 'Urgent replenishment',
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 5,
+                'unit_price' => 12.5,
+            ]],
+        ])->assertCreated();
+
+        $response = $this->get('/api/purchase-orders/export?status=DRAFT&q=PO-EXPORT&format=csv');
+        $response->assertOk();
+        $response->assertHeader('content-type', 'text/csv; charset=UTF-8');
+
+        $content = $response->streamedContent();
+        $this->assertStringContainsString('po_number', $content);
+        $this->assertStringContainsString('PO-EXPORT-001', $content);
+        $this->assertStringContainsString('Export Supplier', $content);
+        $this->assertStringContainsString('62.50', $content);
+    }
+
     public function test_admin_can_post_stock_in_and_create_ledger_records(): void
     {
         $admin = User::factory()->admin()->create();
@@ -520,5 +555,86 @@ class PurchasingInboundApiTest extends TestCase
             'qty_out' => 0,
         ]);
         $this->assertDatabaseCount('stock_items', 0);
+    }
+
+    public function test_stock_in_export_returns_filtered_csv(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create([
+            'supplier_code' => 'SUP-SIN',
+            'supplier_name' => 'Stock In Export Supplier',
+        ]);
+        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-EXPORT-001',
+            'stock_in_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'remarks' => 'Initial receiving batch',
+            'lines' => [[
+                'product_id' => $product->id,
+                'received_qty' => 7,
+            ]],
+        ])->assertCreated();
+
+        $response = $this->get('/api/stock-ins/export?q=SIN-EXPORT&format=csv');
+        $response->assertOk();
+        $response->assertHeader('content-type', 'text/csv; charset=UTF-8');
+
+        $content = $response->streamedContent();
+        $this->assertStringContainsString('stock_in_number', $content);
+        $this->assertStringContainsString('SIN-EXPORT-001', $content);
+        $this->assertStringContainsString('Stock In Export Supplier', $content);
+        $this->assertStringContainsString('7', $content);
+    }
+
+    public function test_qc_document_export_returns_filtered_csv(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'product_type' => 'DEVICE',
+            'requires_serial_number' => true,
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $stockIn = $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-QC-EXPORT',
+            'stock_in_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'received_qty' => 1,
+                'serial_numbers' => ['QC-EXP-0001'],
+            ]],
+        ])->assertCreated();
+
+        $stockInId = (int) $stockIn->json('data.id');
+        $stockItemId = (int) StockItem::query()->value('id');
+
+        $this->postJson('/api/qc-documents', [
+            'document_number' => 'QC-EXPORT-001',
+            'stock_in_id' => $stockInId,
+            'date' => now()->toDateString(),
+            'lines' => [[
+                'stock_item_id' => $stockItemId,
+                'result' => 'PASSED',
+                'checked_conditions' => [],
+                'checked_accessories' => [],
+            ]],
+        ])->assertCreated();
+
+        $response = $this->get('/api/qc-documents/export?q=QC-EXPORT&status=POSTED&format=csv');
+        $response->assertOk();
+        $response->assertHeader('content-type', 'text/csv; charset=UTF-8');
+
+        $content = $response->streamedContent();
+        $this->assertStringContainsString('document_number', $content);
+        $this->assertStringContainsString('QC-EXPORT-001', $content);
+        $this->assertStringContainsString('SIN-QC-EXPORT', $content);
+        $this->assertStringContainsString($admin->name, $content);
     }
 }

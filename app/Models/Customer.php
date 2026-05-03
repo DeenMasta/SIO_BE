@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Domain\MasterData\Enums\RecordStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Customer extends Model
 {
@@ -25,5 +26,10 @@ class Customer extends Model
         return [
             'status' => RecordStatus::class,
         ];
+    }
+
+    public function saleOrders(): HasMany
+    {
+        return $this->hasMany(SaleOrder::class);
     }
 }

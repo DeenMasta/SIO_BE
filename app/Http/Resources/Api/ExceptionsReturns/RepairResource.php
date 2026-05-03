@@ -40,7 +40,6 @@ class RepairResource extends JsonResource
                 return [
                     'id' => $this->stockItem->id,
                     'serial_number' => $this->stockItem->serial_number,
-                    'factory_serial_number' => $this->stockItem->factory_serial_number,
                     'serial_source' => $this->stockItem->serial_source?->value,
                     'current_status' => $this->stockItem->current_status?->value,
                     'qc_status' => $this->stockItem->qc_status?->value,

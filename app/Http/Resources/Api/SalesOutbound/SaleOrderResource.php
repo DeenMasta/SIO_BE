@@ -32,6 +32,7 @@ class SaleOrderResource extends JsonResource
                 'ordered_qty' => $line->ordered_qty,
                 'fulfilled_qty' => $line->fulfilled_qty,
                 'remaining_qty' => max((int) $line->ordered_qty - (int) $line->fulfilled_qty, 0),
+                'is_free' => (bool) $line->is_free,
                 'unit_price' => (string) $line->unit_price,
                 'subtotal' => (string) $line->subtotal,
                 'remarks' => $line->remarks,

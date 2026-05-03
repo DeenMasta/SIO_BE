@@ -165,6 +165,113 @@ class ExceptionsReturnsApiTest extends TestCase
         ])->assertCreated();
     }
 
+    public function test_repair_export_returns_filtered_csv(): void
+    {
+        $admin = User::factory()->admin()->create();
+        [$stockItemId] = $this->createDeliveredDevice($admin);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->postJson('/api/repairs', [
+            'repair_transaction_number' => 'RPR-EXPORT-001',
+            'repair_date' => now()->toDateString(),
+            'stock_item_id' => $stockItemId,
+            'issue_description' => 'Battery issue',
+        ])->assertCreated();
+
+        $response = $this->get('/api/repairs/export?q=RPR-EXPORT&status=OPEN&format=csv');
+        $response->assertOk();
+        $response->assertHeader('content-type', 'text/csv; charset=UTF-8');
+
+        $content = $response->streamedContent();
+        $this->assertStringContainsString('repair_transaction_number', $content);
+        $this->assertStringContainsString('RPR-EXPORT-001', $content);
+        $this->assertStringContainsString('Battery issue', $content);
+    }
+
+    public function test_return_to_supplier_export_returns_filtered_csv(): void
+    {
+        $admin = User::factory()->admin()->create();
+        Sanctum::actingAs($admin, ['admin-access']);
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'product_code' => 'DEV-RTS-EXPORT',
+            'product_type' => 'DEVICE',
+        ]);
+
+        $stockIn = $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-RTS-EXPORT',
+            'stock_in_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'received_qty' => 1,
+                'serial_numbers' => ['SN-RTS-EXPORT-001'],
+            ]],
+        ])->assertCreated();
+
+        $stockInId = (int) $stockIn->json('data.id');
+        $stockInLineId = (int) $stockIn->json('data.lines.0.id');
+        $receivedItemId = (int) $stockIn->json('data.lines.0.stock_items.0.id');
+
+        $this->postJson('/api/return-to-suppliers', [
+            'rts_transaction_number' => 'RTS-EXPORT-001',
+            'supplier_id' => $supplier->id,
+            'stock_in_id' => $stockInId,
+            'return_date' => now()->toDateString(),
+            'lines' => [[
+                'product_id' => $product->id,
+                'stock_item_id' => $receivedItemId,
+                'stock_in_line_id' => $stockInLineId,
+                'qty' => 1,
+                'reason_for_return' => 'PHYSICAL_DAMAGE',
+            ]],
+        ])->assertCreated();
+
+        $response = $this->get('/api/return-to-suppliers/export?q=RTS-EXPORT&status=POSTED&format=csv');
+        $response->assertOk();
+        $response->assertHeader('content-type', 'text/csv; charset=UTF-8');
+
+        $content = $response->streamedContent();
+        $this->assertStringContainsString('rts_transaction_number', $content);
+        $this->assertStringContainsString('RTS-EXPORT-001', $content);
+        $this->assertStringContainsString('1', $content);
+    }
+
+    public function test_customer_return_export_returns_filtered_csv(): void
+    {
+        $admin = User::factory()->admin()->create();
+        [$stockItemId, $productId, $customerId, $stockOutId, $stockOutLineId] = $this->createDeliveredDevice($admin);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->postJson('/api/customer-returns', [
+            'return_transaction_number' => 'CRT-EXPORT-001',
+            'return_date' => now()->toDateString(),
+            'customer_id' => $customerId,
+            'original_invoice_number' => 'INV-CR-EXPORT',
+            'original_stock_out_id' => $stockOutId,
+            'lines' => [[
+                'original_stock_out_line_id' => $stockOutLineId,
+                'product_id' => $productId,
+                'stock_item_id' => $stockItemId,
+                'qty' => 1,
+                'reason_for_return' => 'WARRANTY_CLAIM',
+                'condition_on_return' => 'Damaged',
+                'next_action' => 'REPLACE',
+            ]],
+        ])->assertCreated();
+
+        $response = $this->get('/api/customer-returns/export?q=CRT-EXPORT&status=POSTED&format=csv');
+        $response->assertOk();
+        $response->assertHeader('content-type', 'text/csv; charset=UTF-8');
+
+        $content = $response->streamedContent();
+        $this->assertStringContainsString('return_transaction_number', $content);
+        $this->assertStringContainsString('CRT-EXPORT-001', $content);
+        $this->assertStringContainsString('INV-CR-EXPORT', $content);
+    }
+
     /**
      * @return array{int, int, int}
      */
@@ -224,19 +331,18 @@ class ExceptionsReturnsApiTest extends TestCase
         ])->assertCreated();
 
         $stockInId = (int) $stockIn->json('data.id');
-        $stockInLineId = (int) $stockIn->json('data.lines.0.id');
         $stockItemId = (int) $stockIn->json('data.lines.0.stock_items.0.id');
 
-        $this->postJson('/api/qc-transactions', [
-            'qc_reference_number' => 'QC-RET-'.fake()->numerify('######'),
+        $this->postJson('/api/qc-documents', [
+            'document_number' => 'QC-RET-'.fake()->numerify('######'),
             'stock_in_id' => $stockInId,
-            'qc_date' => now()->toDateString(),
+            'date' => now()->toDateString(),
             'lines' => [
                 [
-                    'stock_in_line_id' => $stockInLineId,
-                    'product_id' => $product->id,
-                    'qc_result' => 'PASS',
-                    'stock_item_ids' => [$stockItemId],
+                    'stock_item_id' => $stockItemId,
+                    'result' => 'PASSED',
+                    'checked_conditions' => [],
+                    'checked_accessories' => [],
                 ],
             ],
         ])->assertCreated();
@@ -246,7 +352,6 @@ class ExceptionsReturnsApiTest extends TestCase
             'idempotency_key' => 'idem-ret-'.fake()->numerify('######'),
             'stock_out_date' => now()->toDateString(),
             'customer_id' => $customer->id,
-            'invoice_number' => 'INV-CR-100001',
             'lines' => [
                 [
                     'product_id' => $product->id,

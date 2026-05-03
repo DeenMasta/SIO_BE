@@ -9,16 +9,21 @@ use App\Application\SalesOutbound\SalesOrders\UseCases\UpdateSaleOrderUseCase;
 use App\Application\Support\ApiResponse;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\DocumentNumberGenerator;
+use App\Application\ReportingAudit\Reports\Services\ExportService;
 use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Domain\SalesOutbound\Enums\SaleOrderStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\SalesOutbound\SaleOrder\ExportSaleOrderRequest;
 use App\Http\Requests\Api\SalesOutbound\SaleOrder\StoreSaleOrderRequest;
 use App\Http\Requests\Api\SalesOutbound\SaleOrder\UpdateSaleOrderRequest;
 use App\Http\Resources\Api\SalesOutbound\SaleOrderResource;
 use App\Models\SaleOrder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SaleOrderController extends Controller
 {
@@ -29,6 +34,7 @@ class SaleOrderController extends Controller
         private readonly DeleteSaleOrderUseCase $deleteSaleOrder,
         private readonly AuditLogger $auditLogger,
         private readonly DocumentNumberGenerator $documentNumberGenerator,
+        private readonly ExportService $exportService,
     ) {
     }
 
@@ -104,6 +110,47 @@ class SaleOrderController extends Controller
         return ApiResponse::success(null, 'Sales order deleted successfully.');
     }
 
+    public function export(ExportSaleOrderRequest $request): StreamedResponse
+    {
+        $this->authorize('viewAny', SaleOrder::class);
+
+        $validated = $request->validated();
+        $format = strtolower((string) ($validated['format'] ?? 'csv'));
+        $filters = collect($validated)->except('format')->toArray();
+
+        $rows = $this->exportRows($filters);
+        $filename = 'sale-orders-'.now()->format('Ymd_His');
+
+        $this->auditLogger->log(
+            userId: (int) $request->user()->id,
+            moduleName: 'SalesOutbound',
+            entityName: 'SaleOrderExport',
+            entityId: 0,
+            action: AuditAction::Export,
+            newValues: ['filters' => $filters, 'filename' => $filename, 'format' => $format],
+        );
+
+        return $this->exportService->export(
+            rows: $rows,
+            headers: [
+                'so_number',
+                'so_date',
+                'expected_delivery_date',
+                'invoice_number',
+                'customer_name',
+                'status',
+                'line_count',
+                'ordered_qty',
+                'fulfilled_qty',
+                'remaining_qty',
+                'total_amount',
+                'remarks',
+            ],
+            filename: $filename,
+            format: $format,
+        );
+    }
+
     public function confirm(SaleOrder $saleOrder, Request $request): JsonResponse
     {
         $this->authorize('create', SaleOrder::class);
@@ -169,5 +216,58 @@ class SaleOrderController extends Controller
         );
 
         return $saleOrder;
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return Collection<int, object>
+     */
+    private function exportRows(array $filters): Collection
+    {
+        $query = DB::table('sale_orders as so')
+            ->leftJoin('customers as c', 'c.id', '=', 'so.customer_id')
+            ->leftJoin('sale_order_lines as sol', 'sol.sale_order_id', '=', 'so.id')
+            ->selectRaw('so.so_number')
+            ->selectRaw('so.so_date')
+            ->selectRaw('so.expected_delivery_date')
+            ->selectRaw('so.invoice_number')
+            ->selectRaw('c.customer_name')
+            ->selectRaw('so.status')
+            ->selectRaw('COUNT(sol.id) as line_count')
+            ->selectRaw('COALESCE(SUM(sol.ordered_qty), 0) as ordered_qty')
+            ->selectRaw('COALESCE(SUM(sol.fulfilled_qty), 0) as fulfilled_qty')
+            ->selectRaw('COALESCE(SUM(sol.ordered_qty - sol.fulfilled_qty), 0) as remaining_qty')
+            ->selectRaw('COALESCE(SUM(sol.subtotal), 0) as total_amount')
+            ->selectRaw('so.remarks')
+            ->groupBy(
+                'so.id',
+                'so.so_number',
+                'so.so_date',
+                'so.expected_delivery_date',
+                'so.invoice_number',
+                'c.customer_name',
+                'so.status',
+                'so.remarks',
+            )
+            ->orderByDesc('so.id');
+
+        $search = trim((string) ($filters['q'] ?? ''));
+        if ($search !== '') {
+            $query->where(function ($searchQuery) use ($search): void {
+                $searchQuery->where('so.so_number', 'like', '%'.$search.'%')
+                    ->orWhere('so.invoice_number', 'like', '%'.$search.'%')
+                    ->orWhere('c.customer_name', 'like', '%'.$search.'%');
+            });
+        }
+
+        if (! empty($filters['status'])) {
+            $query->where('so.status', (string) $filters['status']);
+        }
+
+        return $query->get()->map(function (object $row): object {
+            $row->total_amount = number_format((float) $row->total_amount, 2, '.', '');
+
+            return $row;
+        });
     }
 }

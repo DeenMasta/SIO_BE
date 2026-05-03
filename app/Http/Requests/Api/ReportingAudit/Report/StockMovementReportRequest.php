@@ -19,6 +19,7 @@ class StockMovementReportRequest extends StrictFormRequest
     public function rules(): array
     {
         return [
+            'page' => ['nullable', 'integer', 'min:1'],
             'movement_type' => ['nullable', Rule::enum(MovementType::class)],
             'product_id' => ['nullable', 'integer', 'exists:products,id'],
             'stock_item_id' => ['nullable', 'integer', 'exists:stock_items,id'],
@@ -32,6 +33,7 @@ class StockMovementReportRequest extends StrictFormRequest
     protected function allowedFields(): array
     {
         return [
+            'page',
             'movement_type',
             'product_id',
             'stock_item_id',

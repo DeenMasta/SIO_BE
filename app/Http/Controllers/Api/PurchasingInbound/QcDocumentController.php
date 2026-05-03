@@ -7,10 +7,12 @@ use App\Application\PurchasingInbound\StockIn\UseCases\PostQcDocumentUseCase;
 use App\Application\Support\ApiResponse;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\DocumentNumberGenerator;
+use App\Application\ReportingAudit\Reports\Services\ExportService;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemQcStatus;
 use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\PurchasingInbound\StockIn\ExportQcDocumentRequest;
 use App\Http\Requests\Api\PurchasingInbound\StockIn\PostQcDocumentRequest;
 use App\Http\Requests\Api\PurchasingInbound\StockIn\UpdateQcDocumentRequest;
 use App\Http\Resources\Api\PurchasingInbound\QcDocumentResource;
@@ -20,8 +22,10 @@ use App\Models\StockItem;
 use App\Models\StockMovement;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class QcDocumentController extends Controller
 {
@@ -30,6 +34,7 @@ class QcDocumentController extends Controller
         private readonly PostQcDocumentUseCase $postQcDocument,
         private readonly DocumentNumberGenerator $documentNumberGenerator,
         private readonly AuditLogger $auditLogger,
+        private readonly ExportService $exportService,
     ) {
     }
 
@@ -75,6 +80,43 @@ class QcDocumentController extends Controller
             ->findOrFail($id);
 
         return ApiResponse::success(new QcDocumentResource($document), 'QC Document retrieved successfully.');
+    }
+
+    public function export(ExportQcDocumentRequest $request): StreamedResponse
+    {
+        $validated = $request->validated();
+        $format = strtolower((string) ($validated['format'] ?? 'csv'));
+        $filters = collect($validated)->except('format')->toArray();
+
+        $rows = $this->exportRows($filters);
+        $filename = 'qc-documents-'.now()->format('Ymd_His');
+
+        $this->auditLogger->log(
+            userId: (int) $request->user()->id,
+            moduleName: 'PurchasingInbound',
+            entityName: 'QcDocumentExport',
+            entityId: 0,
+            action: AuditAction::Export,
+            newValues: ['filters' => $filters, 'filename' => $filename, 'format' => $format],
+        );
+
+        return $this->exportService->export(
+            rows: $rows,
+            headers: [
+                'document_number',
+                'date',
+                'pic_name',
+                'stock_in_number',
+                'status',
+                'checks_count',
+                'passed_count',
+                'failed_or_partial_count',
+                'modified',
+                'remarks',
+            ],
+            filename: $filename,
+            format: $format,
+        );
     }
 
     public function update(UpdateQcDocumentRequest $request, int $id): JsonResponse
@@ -339,5 +381,67 @@ class QcDocumentController extends Controller
         sort($normalizedRight);
 
         return $normalizedLeft === $normalizedRight;
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return Collection<int, object>
+     */
+    private function exportRows(array $filters): Collection
+    {
+        $query = DB::table('quality_checks as qc')
+            ->leftJoin('users as pic', 'pic.id', '=', 'qc.pic_id')
+            ->leftJoin('stock_in as si', 'si.id', '=', 'qc.stock_in_id')
+            ->leftJoin('qc_items as qci', 'qci.qc_document_id', '=', 'qc.id')
+            ->leftJoin('stock_items as st', 'st.id', '=', 'qci.stock_item_id')
+            ->selectRaw('qc.document_number')
+            ->selectRaw('qc.date')
+            ->selectRaw('pic.name as pic_name')
+            ->selectRaw('si.stock_in_number')
+            ->selectRaw('qc.status')
+            ->selectRaw('COUNT(qci.id) as checks_count')
+            ->selectRaw("SUM(CASE WHEN qci.result = 'PASSED' THEN 1 ELSE 0 END) as passed_count")
+            ->selectRaw("SUM(CASE WHEN qci.result IN ('FAILED', 'PARTIAL') THEN 1 ELSE 0 END) as failed_or_partial_count")
+            ->selectRaw("CASE WHEN qc.updated_at > qc.created_at THEN 'UPDATED' ELSE 'ORIGINAL' END as modified")
+            ->selectRaw('qc.remarks')
+            ->groupBy(
+                'qc.id',
+                'qc.document_number',
+                'qc.date',
+                'pic.name',
+                'si.stock_in_number',
+                'qc.status',
+                'qc.remarks',
+                'qc.created_at',
+                'qc.updated_at',
+            )
+            ->orderByDesc('qc.id');
+
+        $search = trim((string) ($filters['q'] ?? ''));
+        if ($search !== '') {
+            $query->where(function ($searchQuery) use ($search): void {
+                $searchQuery->where('qc.document_number', 'like', '%'.$search.'%')
+                    ->orWhere('pic.name', 'like', '%'.$search.'%')
+                    ->orWhere('st.serial_number', 'like', '%'.$search.'%');
+            });
+        }
+
+        if (! empty($filters['date_from'])) {
+            $query->whereDate('qc.date', '>=', (string) $filters['date_from']);
+        }
+        if (! empty($filters['date_to'])) {
+            $query->whereDate('qc.date', '<=', (string) $filters['date_to']);
+        }
+        if (! empty($filters['status'])) {
+            $query->where('qc.status', (string) $filters['status']);
+        }
+        if (($filters['modified'] ?? null) === 'updated') {
+            $query->whereColumn('qc.updated_at', '>', 'qc.created_at');
+        }
+        if (($filters['modified'] ?? null) === 'original') {
+            $query->whereColumn('qc.updated_at', '=', 'qc.created_at');
+        }
+
+        return $query->get();
     }
 }

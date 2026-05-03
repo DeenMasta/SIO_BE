@@ -18,7 +18,6 @@ class StockItem extends Model
         'product_id',
         'stock_in_line_id',
         'serial_number',
-        'factory_serial_number',
         'serial_source',
         'current_status',
         'received_condition',

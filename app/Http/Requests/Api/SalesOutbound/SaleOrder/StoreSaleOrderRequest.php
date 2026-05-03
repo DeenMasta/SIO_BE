@@ -29,6 +29,7 @@ class StoreSaleOrderRequest extends StrictFormRequest
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'lines.*.ordered_qty' => ['required', 'integer', 'min:1'],
+            'lines.*.is_free' => ['nullable', 'boolean'],
             'lines.*.unit_price' => ['required', 'numeric', 'min:0'],
             'lines.*.remarks' => ['nullable', 'string', 'max:2000'],
         ];

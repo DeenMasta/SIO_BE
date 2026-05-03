@@ -7,13 +7,20 @@ use App\Application\ExceptionsReturns\Repairs\UseCases\CreateRepairUseCase;
 use App\Application\ExceptionsReturns\Repairs\UseCases\ListRepairsUseCase;
 use App\Application\ExceptionsReturns\Repairs\UseCases\UpdateRepairStatusUseCase;
 use App\Application\Support\ApiResponse;
+use App\Application\Support\AuditLogger;
+use App\Application\ReportingAudit\Reports\Services\ExportService;
+use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\ExceptionsReturns\Repair\ExportRepairRequest;
 use App\Http\Requests\Api\ExceptionsReturns\Repair\StoreRepairRequest;
 use App\Http\Requests\Api\ExceptionsReturns\Repair\UpdateRepairStatusRequest;
 use App\Http\Resources\Api\ExceptionsReturns\RepairResource;
 use App\Models\Repair;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class RepairController extends Controller
 {
@@ -22,6 +29,8 @@ class RepairController extends Controller
         private readonly CreateRepairUseCase $createRepair,
         private readonly UpdateRepairStatusUseCase $updateRepairStatus,
         private readonly RepairRepository $repairs,
+        private readonly AuditLogger $auditLogger,
+        private readonly ExportService $exportService,
     ) {
     }
 
@@ -67,6 +76,44 @@ class RepairController extends Controller
         return ApiResponse::success(new RepairResource($repair), 'Repair retrieved successfully.');
     }
 
+    public function export(ExportRepairRequest $request): StreamedResponse
+    {
+        $this->authorize('viewAny', Repair::class);
+
+        $validated = $request->validated();
+        $format = strtolower((string) ($validated['format'] ?? 'csv'));
+        $filters = collect($validated)->except('format')->toArray();
+
+        $rows = $this->exportRows($filters);
+        $filename = 'repairs-'.now()->format('Ymd_His');
+
+        $this->auditLogger->log(
+            userId: (int) $request->user()->id,
+            moduleName: 'ExceptionsReturns',
+            entityName: 'RepairExport',
+            entityId: 0,
+            action: AuditAction::Export,
+            newValues: ['filters' => $filters, 'filename' => $filename, 'format' => $format],
+        );
+
+        return $this->exportService->export(
+            rows: $rows,
+            headers: [
+                'repair_transaction_number',
+                'repair_date',
+                'serial_number',
+                'product_code',
+                'product_name',
+                'customer_name',
+                'repair_status',
+                'issue_description',
+                'remarks',
+            ],
+            filename: $filename,
+            format: $format,
+        );
+    }
+
     public function updateStatus(UpdateRepairStatusRequest $request, int $id): JsonResponse
     {
         $repair = $this->repairs->findOrFail($id);
@@ -79,5 +126,45 @@ class RepairController extends Controller
         ]);
 
         return ApiResponse::success(new RepairResource($updated), 'Repair status updated successfully.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return Collection<int, object>
+     */
+    private function exportRows(array $filters): Collection
+    {
+        $query = DB::table('repairs as r')
+            ->leftJoin('stock_items as si', 'si.id', '=', 'r.stock_item_id')
+            ->leftJoin('products as p', 'p.id', '=', 'si.product_id')
+            ->leftJoin('customers as c', 'c.id', '=', 'r.customer_id')
+            ->selectRaw('r.repair_transaction_number')
+            ->selectRaw('r.repair_date')
+            ->selectRaw('si.serial_number')
+            ->selectRaw('p.product_code')
+            ->selectRaw('p.product_name')
+            ->selectRaw('c.customer_name')
+            ->selectRaw('r.repair_status')
+            ->selectRaw('r.issue_description')
+            ->selectRaw('r.remarks')
+            ->orderByDesc('r.id');
+
+        $search = trim((string) ($filters['q'] ?? ''));
+        if ($search !== '') {
+            $query->where(function ($searchQuery) use ($search): void {
+                $searchQuery->where('r.repair_transaction_number', 'like', '%'.$search.'%')
+                    ->orWhere('r.repair_status', 'like', '%'.$search.'%')
+                    ->orWhere('r.issue_description', 'like', '%'.$search.'%')
+                    ->orWhere('si.serial_number', 'like', '%'.$search.'%')
+                    ->orWhere('p.product_code', 'like', '%'.$search.'%')
+                    ->orWhere('p.product_name', 'like', '%'.$search.'%')
+                    ->orWhere('c.customer_name', 'like', '%'.$search.'%');
+            });
+        }
+        if (! empty($filters['status'])) {
+            $query->where('r.repair_status', (string) $filters['status']);
+        }
+
+        return $query->get();
     }
 }

@@ -56,9 +56,9 @@ class StockInResource extends JsonResource
                     'stock_items' => $line->stockItems->map(fn ($item): array => [
                         'id' => $item->id,
                         'serial_number' => $item->serial_number,
-                        'factory_serial_number' => $item->factory_serial_number,
                         'serial_source' => $item->serial_source?->value,
                         'current_status' => $item->current_status?->value,
+                        'qc_status' => $item->qc_status?->value,
                         'is_available' => (bool) $item->is_available,
                     ]),
                 ];

@@ -24,6 +24,7 @@ class ProductFactory extends Factory
         return [
             'product_code' => strtoupper(fake()->bothify('PRD-####')),
             'product_name' => fake()->words(3, true),
+            'product_model' => strtoupper(fake()->bothify('MDL-####')),
             'product_type' => $productType,
             'requires_serial_number' => in_array($productType, ['DEVICE', 'ACCESSORY'], true),
             'supplier_id' => Supplier::factory(),

@@ -16,7 +16,6 @@ return new class extends Migration
             $table->foreignId('product_id')->constrained('products')->restrictOnDelete();
             $table->foreignId('stock_in_line_id')->constrained('stock_in_lines')->cascadeOnDelete();
             $table->string('serial_number', 80)->unique();
-            $table->string('factory_serial_number', 80)->nullable()->unique();
             $table->string('serial_source', 20);
             $table->string('current_status', 30)->default('RECEIVED');
             $table->boolean('is_available')->default(true);

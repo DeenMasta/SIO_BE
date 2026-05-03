@@ -23,6 +23,7 @@ class StoreProductRequest extends StrictFormRequest
         return [
             'product_code' => ['required', 'string', 'max:50', 'alpha_dash', 'unique:products,product_code'],
             'product_name' => ['required', 'string', 'max:150'],
+            'product_model' => ['nullable', 'string', 'max:150'],
             'product_type' => ['required', Rule::enum(ProductType::class)],
             'requires_serial_number' => ['required', 'boolean'],
             'supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
@@ -40,11 +41,21 @@ class StoreProductRequest extends StrictFormRequest
         ];
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('selling_price') && trim((string) $this->input('selling_price')) === '') {
+            $this->merge([
+                'selling_price' => 0,
+            ]);
+        }
+    }
+
     protected function allowedFields(): array
     {
         return [
             'product_code',
             'product_name',
+            'product_model',
             'product_type',
             'requires_serial_number',
             'supplier_id',

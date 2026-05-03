@@ -40,6 +40,7 @@ class SerialTracingService
         }
 
         $movements = StockMovement::query()
+            ->with('performer:id,name')
             ->where('stock_item_id', $stockItem->id)
             ->orderBy('movement_datetime', 'asc')
             ->get();
@@ -53,6 +54,7 @@ class SerialTracingService
                 'product_type' => $stockItem->stockInLine->product->product_type,
             ],
             'current_status' => $stockItem->current_status?->value,
+            'qc_status' => $stockItem->qc_status?->value,
             'is_available' => $stockItem->is_available,
             'created_at' => $stockItem->created_at?->toIso8601String(),
             'movements' => $this->formatMovements($movements),
@@ -76,6 +78,7 @@ class SerialTracingService
                 'reference_table' => $movement->reference_table,
                 'reference_id' => $movement->reference_id,
                 'performed_by' => $movement->performed_by,
+                'performed_by_name' => $movement->performer?->name,
                 'remarks' => $movement->remarks,
                 'created_at' => $movement->created_at,
             ];

@@ -35,10 +35,32 @@ class SearchController extends Controller
         $filters = $request->validated();
 
         $records = StockItem::query()
-            ->select(['id', 'product_id', 'serial_number', 'factory_serial_number', 'current_status', 'is_available', 'qc_status'])
-            ->where(function (Builder $query) use ($filters): void {
-                $query->where('serial_number', 'like', '%'.(string) $filters['query'].'%')
-                    ->orWhere('factory_serial_number', 'like', '%'.(string) $filters['query'].'%');
+            ->with(['product:id,product_code,product_name,product_model'])
+            ->select([
+                'id',
+                'product_id',
+                'serial_number',
+                'current_status',
+                'is_available',
+                'qc_status',
+                'last_movement_at',
+            ])
+            ->when(! empty($filters['query'] ?? ''), function (Builder $query) use ($filters): void {
+                $search = trim((string) $filters['query']);
+
+                $query->where('serial_number', 'like', '%'.$search.'%');
+            })
+            ->when(! empty($filters['product_id'] ?? null), function (Builder $query) use ($filters): void {
+                $query->where('product_id', (int) $filters['product_id']);
+            })
+            ->when(! empty($filters['current_status'] ?? ''), function (Builder $query) use ($filters): void {
+                $query->where('current_status', (string) $filters['current_status']);
+            })
+            ->when(! empty($filters['qc_status'] ?? ''), function (Builder $query) use ($filters): void {
+                $query->where('qc_status', (string) $filters['qc_status']);
+            })
+            ->when(array_key_exists('is_available', $filters), function (Builder $query) use ($filters): void {
+                $query->where('is_available', (bool) $filters['is_available']);
             })
             ->orderByDesc('id')
             ->paginate((int) ($filters['per_page'] ?? 15));

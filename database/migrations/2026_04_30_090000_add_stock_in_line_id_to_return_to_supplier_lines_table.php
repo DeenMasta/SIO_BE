@@ -20,11 +20,14 @@ return new class extends Migration
         });
 
         DB::statement('
-            UPDATE return_to_supplier_lines rtsl
-            INNER JOIN stock_items si ON si.id = rtsl.stock_item_id
-            SET rtsl.stock_in_line_id = si.stock_in_line_id
-            WHERE rtsl.stock_item_id IS NOT NULL
-              AND rtsl.stock_in_line_id IS NULL
+            UPDATE return_to_supplier_lines
+            SET stock_in_line_id = (
+                SELECT si.stock_in_line_id
+                FROM stock_items si
+                WHERE si.id = return_to_supplier_lines.stock_item_id
+            )
+            WHERE stock_item_id IS NOT NULL
+              AND stock_in_line_id IS NULL
         ');
     }
 

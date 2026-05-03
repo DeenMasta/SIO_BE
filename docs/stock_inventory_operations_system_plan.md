@@ -423,7 +423,6 @@ Fields:
 
 For devices that already have manufacturer serial number:
 
-- store as **factory_serial_number**
 - must be unique when present
 
 ### 6.3 Internal Serial Number Generation
@@ -447,7 +446,6 @@ Generation rule:
 Suggested fields:
 
 - serial_number
-- factory_serial_number (nullable for devices only)
 - serial_source = factory / generated
 
 ### 6.4 Uniqueness Rules

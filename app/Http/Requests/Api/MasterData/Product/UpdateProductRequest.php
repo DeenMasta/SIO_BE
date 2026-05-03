@@ -27,6 +27,7 @@ class UpdateProductRequest extends StrictFormRequest
         return [
             'product_code' => ['sometimes', 'required', 'string', 'max:50', 'alpha_dash', Rule::unique('products', 'product_code')->ignore($product->id)],
             'product_name' => ['sometimes', 'required', 'string', 'max:150'],
+            'product_model' => ['sometimes', 'nullable', 'string', 'max:150'],
             'product_type' => ['sometimes', 'required', Rule::enum(ProductType::class)],
             'requires_serial_number' => ['sometimes', 'required', 'boolean'],
             'supplier_id' => ['sometimes', 'required', 'integer', 'exists:suppliers,id'],
@@ -44,11 +45,21 @@ class UpdateProductRequest extends StrictFormRequest
         ];
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('selling_price') && trim((string) $this->input('selling_price')) === '') {
+            $this->merge([
+                'selling_price' => 0,
+            ]);
+        }
+    }
+
     protected function allowedFields(): array
     {
         return [
             'product_code',
             'product_name',
+            'product_model',
             'product_type',
             'requires_serial_number',
             'supplier_id',
