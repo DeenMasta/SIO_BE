@@ -18,6 +18,7 @@ use App\Http\Requests\Api\PurchasingInbound\StockIn\UpdateQcDocumentRequest;
 use App\Http\Resources\Api\PurchasingInbound\QcDocumentResource;
 use App\Models\QcCheck;
 use App\Models\QcDocument;
+use App\Models\StockInLine;
 use App\Models\StockItem;
 use App\Models\StockMovement;
 use Illuminate\Http\JsonResponse;
@@ -67,6 +68,49 @@ class QcDocumentController extends Controller
         $payload['document_number'] = trim((string) ($payload['document_number'] ?? '')) !== ''
             ? trim((string) $payload['document_number'])
             : $this->documentNumberGenerator->generateQcDocumentNumber();
+
+        $qcDocument = $this->postQcDocument->execute($payload);
+
+        return ApiResponse::success(new QcDocumentResource($qcDocument), 'QC Document created successfully.', 201);
+    }
+
+    public function storeLegacy(Request $request): JsonResponse
+    {
+        $payload = $this->normalizeLegacyPayload($request);
+        $payload['pic_id'] = (int) $request->user()->id;
+        $payload['document_number'] = trim((string) ($payload['document_number'] ?? '')) !== ''
+            ? trim((string) $payload['document_number'])
+            : $this->documentNumberGenerator->generateQcDocumentNumber();
+
+        if ($payload['lines'] === []) {
+            $qcDocument = QcDocument::query()->create([
+                'document_number' => $payload['document_number'],
+                'date' => $payload['date'],
+                'pic_id' => $payload['pic_id'],
+                'stock_in_id' => $payload['stock_in_id'],
+                'status' => 'POSTED',
+                'remarks' => $payload['remarks'] ?? null,
+            ]);
+
+            $this->auditLogger->log(
+                userId: (int) $request->user()->id,
+                moduleName: 'PurchasingInbound',
+                entityName: 'QcDocument',
+                entityId: (int) $qcDocument->id,
+                action: AuditAction::Post,
+                newValues: [
+                    'document_number' => $qcDocument->document_number,
+                    'legacy_payload' => true,
+                    'total_lines' => 0,
+                ],
+            );
+
+            return ApiResponse::success(
+                new QcDocumentResource($qcDocument->fresh('checks.stockItem', 'pic')),
+                'QC Document created successfully.',
+                201,
+            );
+        }
 
         $qcDocument = $this->postQcDocument->execute($payload);
 
@@ -443,5 +487,71 @@ class QcDocumentController extends Controller
         }
 
         return $query->get();
+    }
+
+    /**
+     * @return array{
+     *   document_number:string,
+     *   stock_in_id:int,
+     *   date:string,
+     *   remarks:?string,
+     *   lines:array<int, array{
+     *     stock_item_id:int,
+     *     result:string,
+     *     checked_conditions:array<int, string>,
+     *     checked_accessories:array<int, string>,
+     *     remarks:?string
+     *   }>
+     * }
+     */
+    private function normalizeLegacyPayload(Request $request): array
+    {
+        $rawLines = array_values((array) $request->input('lines', []));
+        $normalizedLines = [];
+        $stockInId = (int) $request->input('stock_in_id', 0);
+
+        foreach ($rawLines as $line) {
+            if (! is_array($line)) {
+                continue;
+            }
+
+            $lineStockInId = 0;
+            $stockInLineId = (int) ($line['stock_in_line_id'] ?? 0);
+            if ($stockInLineId > 0) {
+                $lineStockInId = (int) (StockInLine::query()->whereKey($stockInLineId)->value('stock_in_id') ?? 0);
+            }
+
+            if ($stockInId === 0 && $lineStockInId > 0) {
+                $stockInId = $lineStockInId;
+            }
+
+            $result = match (strtoupper((string) ($line['qc_result'] ?? 'PASS'))) {
+                'FAIL', 'FAILED' => StockItemQcStatus::Failed->value,
+                'PARTIAL' => StockItemQcStatus::Partial->value,
+                default => StockItemQcStatus::Passed->value,
+            };
+
+            foreach (array_values(array_map('intval', (array) ($line['stock_item_ids'] ?? []))) as $stockItemId) {
+                if ($stockItemId <= 0) {
+                    continue;
+                }
+
+                $normalizedLines[] = [
+                    'stock_item_id' => $stockItemId,
+                    'result' => $result,
+                    'checked_conditions' => [],
+                    'checked_accessories' => [],
+                    'remarks' => isset($line['remarks']) ? (string) $line['remarks'] : null,
+                ];
+            }
+        }
+
+        return [
+            'document_number' => (string) $request->input('qc_reference_number', ''),
+            'stock_in_id' => $stockInId,
+            'date' => (string) $request->input('qc_date', now()->toDateString()),
+            'remarks' => $request->filled('remarks') ? (string) $request->input('remarks') : null,
+            'lines' => $normalizedLines,
+        ];
     }
 }

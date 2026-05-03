@@ -68,7 +68,7 @@ class PostStockInUseCase implements UseCase
                 'purchase_order_id' => $purchaseOrderId,
                 'supplier_id' => $data['supplier_id'],
                 'stock_in_pic_id' => $data['stock_in_pic_id'],
-                'status' => StockInStatus::Received,
+                'status' => StockInStatus::Posted,
                 'remarks' => $data['remarks'] ?? null,
             ]);
 
@@ -119,7 +119,7 @@ class PostStockInUseCase implements UseCase
                             'stock_in_line_id'       => $stockInLine->id,
                             'serial_number'          => $serialValue,
                             'serial_source'          => $serialSource,
-                            'current_status'         => StockItemStatus::InStock,
+                            'current_status'         => StockItemStatus::Received,
                             'qc_status'              => StockItemQcStatus::Pending,
                             'is_available'           => true,
                             'last_movement_at'       => now(),
@@ -135,7 +135,7 @@ class PostStockInUseCase implements UseCase
                             'reference_id' => $stockInLine->id,
                             'qty_in' => 1,
                             'qty_out' => 0,
-                            'to_status' => StockItemStatus::InStock->value,
+                            'to_status' => StockItemStatus::Received->value,
                             'performed_by' => (int) $data['stock_in_pic_id'],
                             'remarks' => $itemRemarks,
                         ]);

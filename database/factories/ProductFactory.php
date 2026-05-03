@@ -26,7 +26,11 @@ class ProductFactory extends Factory
             'product_name' => fake()->words(3, true),
             'product_model' => strtoupper(fake()->bothify('MDL-####')),
             'product_type' => $productType,
-            'requires_serial_number' => in_array($productType, ['DEVICE', 'ACCESSORY'], true),
+            'requires_serial_number' => static fn (array $attributes): bool => in_array(
+                (string) ($attributes['product_type'] ?? $productType),
+                ['DEVICE', 'ACCESSORY'],
+                true,
+            ),
             'supplier_id' => Supplier::factory(),
             'selling_price' => fake()->randomFloat(2, 10, 1000),
             'uom' => fake()->randomElement(['PCS', 'BOX']),

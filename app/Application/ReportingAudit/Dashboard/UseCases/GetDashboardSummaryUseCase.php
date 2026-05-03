@@ -6,6 +6,7 @@ use App\Application\Contracts\UseCase;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
+use App\Models\QcDocument;
 use App\Models\StockIn;
 use App\Models\StockItem;
 use App\Models\StockMovement;
@@ -76,6 +77,14 @@ class GetDashboardSummaryUseCase implements UseCase
             ->groupBy('stock_out.stock_out_date')
             ->orderBy('stock_out.stock_out_date');
 
+        $qcPassFailTrendQuery = QcDocument::query()
+            ->leftJoin('qc_items', 'qc_items.qc_document_id', '=', 'quality_checks.id')
+            ->selectRaw('quality_checks.date as date')
+            ->selectRaw("SUM(CASE WHEN qc_items.result = 'PASSED' THEN 1 ELSE 0 END) as qty_pass")
+            ->selectRaw("SUM(CASE WHEN qc_items.result IN ('FAILED', 'PARTIAL') THEN 1 ELSE 0 END) as qty_fail")
+            ->groupBy('quality_checks.date')
+            ->orderBy('quality_checks.date');
+
         $topMovedProductsQuery = StockMovement::query()
             ->selectRaw('product_id, SUM(qty_in + qty_out) as moved_qty')
             ->groupBy('product_id')
@@ -85,11 +94,13 @@ class GetDashboardSummaryUseCase implements UseCase
         if ($dateFrom !== null) {
             $stockInTrendQuery->whereDate('stock_in_date', '>=', (string) $dateFrom);
             $stockOutTrendQuery->whereDate('stock_out.stock_out_date', '>=', (string) $dateFrom);
+            $qcPassFailTrendQuery->whereDate('quality_checks.date', '>=', (string) $dateFrom);
             $topMovedProductsQuery->whereDate('movement_datetime', '>=', (string) $dateFrom);
         }
         if ($dateTo !== null) {
             $stockInTrendQuery->whereDate('stock_in_date', '<=', (string) $dateTo);
             $stockOutTrendQuery->whereDate('stock_out.stock_out_date', '<=', (string) $dateTo);
+            $qcPassFailTrendQuery->whereDate('quality_checks.date', '<=', (string) $dateTo);
             $topMovedProductsQuery->whereDate('movement_datetime', '<=', (string) $dateTo);
         }
 
@@ -120,6 +131,7 @@ class GetDashboardSummaryUseCase implements UseCase
             'overdue_po_count' => $overduePoCount,
             'movements_today' => StockMovement::query()->whereDate('movement_datetime', today())->count(),
             'stock_in_trend' => $stockInTrendQuery->get(),
+            'qc_pass_fail_trend' => $qcPassFailTrendQuery->get(),
             'stock_out_trend' => $stockOutTrendQuery->get(),
             'top_moved_products' => $topMovedProducts,
         ];

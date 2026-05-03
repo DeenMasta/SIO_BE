@@ -234,7 +234,7 @@ class PurchaseOrderController extends Controller
     private function exportRows(array $filters): Collection
     {
         $query = PurchaseOrder::query()
-            ->from('purchase_orders as po')
+            ->from('purchase_orders', 'po')
             ->leftJoin('suppliers as s', 's.id', '=', 'po.supplier_id')
             ->leftJoin('purchase_order_lines as pol', 'pol.purchase_order_id', '=', 'po.id')
             ->selectRaw('po.po_number')

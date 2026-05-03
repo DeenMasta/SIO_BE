@@ -26,7 +26,7 @@ class ProductResource extends JsonResource
                 'supplier_code' => $this->supplier->supplier_code,
                 'supplier_name' => $this->supplier->supplier_name,
             ] : null,
-            'selling_price' => (string) $this->selling_price,
+            'selling_price' => $this->formatSellingPrice(),
             'uom' => $this->uom,
             'reorder_level' => $this->reorder_level,
             'remarks' => $this->remarks,
@@ -46,5 +46,13 @@ class ProductResource extends JsonResource
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
+    }
+
+    private function formatSellingPrice(): string
+    {
+        $value = (string) $this->selling_price;
+        $trimmed = rtrim(rtrim($value, '0'), '.');
+
+        return $trimmed === '' ? '0' : $trimmed;
     }
 }

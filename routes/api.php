@@ -65,6 +65,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::get('stock-ins/{stockIn}/pending-qc-items', [StockInController::class, 'pendingQcItems']);
     Route::get('stock-ins/export', [StockInController::class, 'export']);
     Route::apiResource('stock-ins', StockInController::class)->only(['index', 'store', 'show']);
+    Route::post('qc-transactions', [QcDocumentController::class, 'storeLegacy'])->middleware('can:access-staff');
     Route::get('qc-documents/export', [QcDocumentController::class, 'export'])->middleware('can:access-staff');
     Route::apiResource('qc-documents', QcDocumentController::class)->only(['index', 'store', 'show', 'update'])->middleware('can:access-staff');
     Route::get('stock-outs/serial-options', [StockOutController::class, 'serialOptions']);
@@ -101,6 +102,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::get('purchase-orders/open', [ReportPackController::class, 'poOpen']);
         Route::get('purchase-orders/aging', [ReportPackController::class, 'poAging']);
         Route::get('stock-in/by-supplier-do', [ReportPackController::class, 'stockInBySupplierDo']);
+        Route::get('qc/pass-fail', [ReportPackController::class, 'qcPassFail']);
         Route::get('stock-out/by-invoice-customer', [ReportPackController::class, 'stockOutByInvoiceCustomer']);
         Route::get('repairs/summary', [ReportPackController::class, 'repairSummary']);
         Route::get('rts/summary', [ReportPackController::class, 'rtsSummary']);

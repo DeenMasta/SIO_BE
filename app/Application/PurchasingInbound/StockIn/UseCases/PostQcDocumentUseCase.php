@@ -6,6 +6,7 @@ use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemQcStatus;
+use App\Domain\InventoryCore\Enums\StockItemStatus;
 use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Models\QcCheck;
 use App\Models\QcDocument;
@@ -125,9 +126,11 @@ class PostQcDocumentUseCase implements UseCase
                 $stockItem->qc_status = $result;
 
                 if ($result === StockItemQcStatus::Failed || $result === StockItemQcStatus::Partial) {
+                    $stockItem->current_status = StockItemStatus::Received;
                     // Mark unavailable to prevent accidental dispatch
                     $stockItem->is_available = false;
                 } elseif ($result === StockItemQcStatus::Passed) {
+                    $stockItem->current_status = StockItemStatus::InStock;
                     $stockItem->is_available = true;
                 }
 
@@ -143,7 +146,7 @@ class PostQcDocumentUseCase implements UseCase
                     'reference_id'      => (int) $qcCheck->id,
                     'qty_in'            => 0,
                     'qty_out'           => 0,
-                    'from_status'       => $stockItem->current_status->value,
+                    'from_status'       => StockItemStatus::Received->value,
                     'to_status'         => $stockItem->current_status->value,
                     'performed_by'      => $picId,
                     'remarks'           => $lineRemarks,

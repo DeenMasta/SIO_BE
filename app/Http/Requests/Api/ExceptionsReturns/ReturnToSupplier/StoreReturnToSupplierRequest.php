@@ -4,6 +4,8 @@ namespace App\Http\Requests\Api\ExceptionsReturns\ReturnToSupplier;
 
 use App\Domain\ExceptionsReturns\Enums\ExceptionReason;
 use App\Http\Requests\Api\StrictFormRequest;
+use App\Models\StockInLine;
+use App\Models\StockItem;
 use Illuminate\Validation\Rule;
 
 class StoreReturnToSupplierRequest extends StrictFormRequest
@@ -44,5 +46,40 @@ class StoreReturnToSupplierRequest extends StrictFormRequest
             'remarks',
             'lines',
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $payload = $this->all();
+        $lines = array_values((array) ($payload['lines'] ?? []));
+        $resolvedStockInId = (int) ($payload['stock_in_id'] ?? 0);
+
+        foreach ($lines as $index => $line) {
+            if (! is_array($line)) {
+                continue;
+            }
+
+            $stockInLineId = (int) ($line['stock_in_line_id'] ?? 0);
+            if ($stockInLineId === 0 && ! empty($line['stock_item_id'])) {
+                $stockInLineId = (int) (StockItem::query()
+                    ->whereKey((int) $line['stock_item_id'])
+                    ->value('stock_in_line_id') ?? 0);
+            }
+
+            if ($stockInLineId > 0) {
+                $lines[$index]['stock_in_line_id'] = $stockInLineId;
+
+                if ($resolvedStockInId === 0) {
+                    $resolvedStockInId = (int) (StockInLine::query()
+                        ->whereKey($stockInLineId)
+                        ->value('stock_in_id') ?? 0);
+                }
+            }
+        }
+
+        $this->merge([
+            'stock_in_id' => $resolvedStockInId > 0 ? $resolvedStockInId : ($payload['stock_in_id'] ?? null),
+            'lines' => $lines,
+        ]);
     }
 }

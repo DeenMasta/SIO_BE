@@ -19,7 +19,7 @@ class SearchController extends Controller
         $filters = $request->validated();
 
         $records = Product::query()
-            ->select(['id', 'product_code', 'product_name', 'product_type', 'unit_of_measure'])
+            ->select(['id', 'product_code', 'product_name', 'product_type', 'uom'])
             ->where(function (Builder $query) use ($filters): void {
                 $query->where('product_code', 'like', '%'.(string) $filters['query'].'%')
                     ->orWhere('product_name', 'like', '%'.(string) $filters['query'].'%');
@@ -73,10 +73,22 @@ class SearchController extends Controller
         $filters = $request->validated();
 
         $records = StockOut::query()
-            ->join('sale_orders', 'sale_orders.id', '=', 'stock_outs.sale_order_id')
-            ->select(['stock_outs.id', 'stock_outs.stock_out_number', 'stock_outs.stock_out_date', 'sale_orders.invoice_number', 'stock_outs.customer_id'])
-            ->where('sale_orders.invoice_number', 'like', '%'.(string) $filters['query'].'%')
-            ->orderByDesc('stock_outs.id')
+            ->leftJoin('sale_orders', 'sale_orders.id', '=', 'stock_out.sale_order_id')
+            ->select([
+                'stock_out.id',
+                'stock_out.stock_out_number',
+                'stock_out.stock_out_date',
+                'stock_out.invoice_number',
+                'stock_out.customer_id',
+                'sale_orders.so_number',
+            ])
+            ->where(function (Builder $query) use ($filters): void {
+                $search = '%'.(string) $filters['query'].'%';
+                $query->where('stock_out.invoice_number', 'like', $search)
+                    ->orWhere('sale_orders.invoice_number', 'like', $search)
+                    ->orWhere('stock_out.stock_out_number', 'like', $search);
+            })
+            ->orderByDesc('stock_out.id')
             ->paginate((int) ($filters['per_page'] ?? 15));
 
         return $this->paginatedResponse($records, 'Invoice search completed successfully.');

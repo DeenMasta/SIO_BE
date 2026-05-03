@@ -44,7 +44,7 @@ final class GetInventoryDetailUseCase implements UseCase
     private function availableSerialsQuery(int $productId, string $search): Builder
     {
         return StockItem::query()
-            ->from('stock_items as si')
+            ->from('stock_items', 'si')
             ->leftJoin('stock_in_lines as sil', 'sil.id', '=', 'si.stock_in_line_id')
             ->leftJoin('stock_in as sin', 'sin.id', '=', 'sil.stock_in_id')
             ->select([
