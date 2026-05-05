@@ -24,7 +24,24 @@ class EloquentAuditLogRepository implements AuditLogRepository
 
     private function buildQuery(array $filters): Builder
     {
-        $query = AuditLog::query()->latest('id');
+        $query = AuditLog::query()
+            ->with('user:id,name')
+            ->latest('id');
+
+        if (! empty($filters['q'])) {
+            $term = trim((string) $filters['q']);
+
+            $query->where(function (Builder $builder) use ($term) {
+                $builder
+                    ->where('module_name', 'like', "%{$term}%")
+                    ->orWhere('entity_name', 'like', "%{$term}%")
+                    ->orWhere('action', 'like', "%{$term}%")
+                    ->orWhere('entity_id', 'like', "%{$term}%")
+                    ->orWhereHas('user', function (Builder $userQuery) use ($term) {
+                        $userQuery->where('name', 'like', "%{$term}%");
+                    });
+            });
+        }
 
         if (! empty($filters['module_name'])) {
             $query->where('module_name', (string) $filters['module_name']);

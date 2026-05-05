@@ -24,17 +24,47 @@ class AuditLogResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $action = is_object($this->action) ? (string) $this->action->value : (string) $this->action;
+
         return [
             'id' => (int) $this->id,
             'user_id' => $this->user_id !== null ? (int) $this->user_id : null,
+            'user_name' => $this->user?->name,
             'module_name' => (string) $this->module_name,
             'entity_name' => (string) $this->entity_name,
             'entity_id' => $this->entity_id !== null ? (int) $this->entity_id : null,
-            'action' => is_object($this->action) ? (string) $this->action->value : (string) $this->action,
+            'action' => $action,
+            'description' => self::describe(
+                moduleName: (string) $this->module_name,
+                entityName: (string) $this->entity_name,
+                entityId: $this->entity_id !== null ? (int) $this->entity_id : null,
+                action: $action,
+            ),
             'old_values' => self::redact($this->old_values),
             'new_values' => self::redact($this->new_values),
             'created_at' => $this->created_at?->toISOString(),
         ];
+    }
+
+    public static function describe(
+        string $moduleName,
+        string $entityName,
+        ?int $entityId,
+        string $action,
+    ): string {
+        $target = trim($entityName) !== ''
+            ? $entityName
+            : 'Record';
+
+        if ($entityId !== null) {
+            $target .= ' #'.$entityId;
+        }
+
+        $module = trim($moduleName) !== ''
+            ? ' in '.$moduleName
+            : '';
+
+        return trim(sprintf('%s %s%s.', ucfirst(strtolower($action)), $target, $module));
     }
 
     /**

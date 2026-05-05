@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Domain\ReportingAudit\Enums\AuditAction;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AuditLog extends Model
 {
@@ -27,5 +28,10 @@ class AuditLog extends Model
             'old_values' => 'array',
             'new_values' => 'array',
         ];
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 }

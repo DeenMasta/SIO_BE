@@ -193,10 +193,45 @@ class ReportingAuditApiTest extends TestCase
 
         $this->getJson('/api/audit-logs')
             ->assertOk()
+            ->assertJsonPath('data.0.user_name', $admin->name)
+            ->assertJsonPath('data.0.description', 'Update User #'.$admin->id.' in IdentityAccess.')
             ->assertJsonPath('data.0.old_values.password', '[REDACTED]')
             ->assertJsonPath('data.0.old_values.profile.api_token', '[REDACTED]')
             ->assertJsonPath('data.0.new_values.access_token', '[REDACTED]')
             ->assertJsonPath('data.0.new_values.status', 'ACTIVE');
+    }
+
+    public function test_admin_can_view_audit_log_details_and_search_logs(): void
+    {
+        $admin = User::factory()->admin()->create([
+            'name' => 'Audit Admin',
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $auditLog = AuditLog::query()->create([
+            'user_id' => $admin->id,
+            'module_name' => 'InventoryControl',
+            'entity_name' => 'StockMovement',
+            'entity_id' => 42,
+            'action' => 'EXPORT',
+            'old_values' => null,
+            'new_values' => [
+                'filename' => 'stock-movements.csv',
+            ],
+        ]);
+
+        $this->getJson('/api/audit-logs/'.$auditLog->id)
+            ->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('data.id', $auditLog->id)
+            ->assertJsonPath('data.user_name', 'Audit Admin')
+            ->assertJsonPath('data.description', 'Export StockMovement #42 in InventoryControl.');
+
+        $this->getJson('/api/audit-logs?q=Audit%20Admin')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $auditLog->id);
     }
 
     public function test_export_endpoints_respect_access_and_return_csv(): void

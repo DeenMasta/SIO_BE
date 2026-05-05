@@ -10,6 +10,7 @@ use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\ReportingAudit\AuditLog\AuditLogReportRequest;
 use App\Http\Resources\Api\ReportingAudit\AuditLogResource;
+use App\Models\AuditLog;
 use Illuminate\Http\JsonResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -37,6 +38,16 @@ class AuditLogController extends Controller
                     'last_page' => $records->lastPage(),
                 ],
             ],
+        );
+    }
+
+    public function show(AuditLog $auditLog): JsonResponse
+    {
+        $auditLog->load('user:id,name');
+
+        return ApiResponse::success(
+            new AuditLogResource($auditLog),
+            'Audit log retrieved successfully.',
         );
     }
 

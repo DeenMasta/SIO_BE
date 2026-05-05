@@ -112,4 +112,5 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
 
     Route::get('audit-logs', [AuditLogController::class, 'index'])->middleware('can:access-admin');
     Route::get('audit-logs/export', [AuditLogController::class, 'export'])->middleware('can:access-admin');
+    Route::get('audit-logs/{auditLog}', [AuditLogController::class, 'show'])->middleware('can:access-admin');
 });
