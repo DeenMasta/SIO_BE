@@ -8,7 +8,7 @@ return [
 
     'allowed_origins' => array_values(array_filter(array_map(
         static fn (string $origin): string => trim($origin),
-        explode(',', (string) env('FRONTEND_URLS', env('FRONTEND_URL', 'http://localhost:3000')))
+        explode(',', (string) env('FRONTEND_URLS', env('FRONTEND_URL', 'http://localhost:5174')))
     ))),
 
     'allowed_origins_patterns' => [],

@@ -234,7 +234,7 @@ class RemainingWorkCompletionTest extends TestCase
     {
         $admin = User::factory()->admin()->create();
         [$receivedItemId, $receivedProductId, $supplierId] = $this->createReceivedDevice($admin);
-        [$repairStockItemId] = $this->createDeliveredDevice($admin);
+        [$repairStockItemId] = $this->createInStockDevice($admin);
         [$returnStockItemId, $productId, $customerId, $stockOutId, $stockOutLineId] = $this->createDeliveredDevice($admin);
 
         Sanctum::actingAs($admin, ['admin-access']);
@@ -243,6 +243,7 @@ class RemainingWorkCompletionTest extends TestCase
             'repair_transaction_number' => 'RPR-AGE-100001',
             'repair_date' => now()->subDays(40)->toDateString(),
             'stock_item_id' => $repairStockItemId,
+            'repair_flow' => 'INTERNAL',
             'issue_description' => 'Needs aging bucket',
         ])->assertCreated();
 

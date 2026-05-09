@@ -2,63 +2,74 @@
 
 namespace App\Domain\ExceptionsReturns\Services;
 
+use App\Domain\ExceptionsReturns\Enums\RepairFlow;
 use App\Domain\ExceptionsReturns\Enums\RepairStatus;
 use Illuminate\Validation\ValidationException;
 
-/**
- * RepairStateMachine enforces strict state transitions for repairs.
- *
- * State Diagram:
- *   OPEN → IN_PROGRESS → COMPLETED
- *       ↓
- *   CANCELLED (from OPEN or IN_PROGRESS)
- */
 class RepairStateMachine
 {
     /**
-     * Transition map: current_status_value => [allowed_next_status_values]
+     * @var array<string, array<string, array<int, string>>>
      */
     private const array TRANSITIONS = [
-        'OPEN' => ['IN_PROGRESS', 'CANCELLED', 'COMPLETED'],
-        'IN_PROGRESS' => ['COMPLETED', 'CANCELLED'],
-        'COMPLETED' => [],
-        'CANCELLED' => [],
+        RepairFlow::Internal->value => [
+            RepairStatus::Open->value => [
+                RepairStatus::InProgress->value,
+                RepairStatus::Cancelled->value,
+                RepairStatus::Completed->value,
+            ],
+            RepairStatus::InProgress->value => [
+                RepairStatus::Completed->value,
+                RepairStatus::Cancelled->value,
+            ],
+            RepairStatus::ReadyToReturn->value => [],
+            RepairStatus::Completed->value => [],
+            RepairStatus::ReturnedToCustomer->value => [],
+            RepairStatus::Cancelled->value => [],
+        ],
+        RepairFlow::Customer->value => [
+            RepairStatus::Open->value => [
+                RepairStatus::InProgress->value,
+                RepairStatus::Cancelled->value,
+                RepairStatus::ReadyToReturn->value,
+            ],
+            RepairStatus::InProgress->value => [
+                RepairStatus::ReadyToReturn->value,
+                RepairStatus::Cancelled->value,
+            ],
+            RepairStatus::ReadyToReturn->value => [
+                RepairStatus::ReturnedToCustomer->value,
+                RepairStatus::Cancelled->value,
+            ],
+            RepairStatus::Completed->value => [],
+            RepairStatus::ReturnedToCustomer->value => [],
+            RepairStatus::Cancelled->value => [],
+        ],
     ];
 
-    /**
-     * Check if a transition is allowed.
-     */
-    public static function isAllowed(RepairStatus $currentStatus, RepairStatus $newStatus): bool
+    public static function isAllowed(RepairFlow $flow, RepairStatus $currentStatus, RepairStatus $newStatus): bool
     {
-        $currentValue = $currentStatus->value;
-        $newValue = $newStatus->value;
-        $allowed = self::TRANSITIONS[$currentValue] ?? [];
+        $allowed = self::TRANSITIONS[$flow->value][$currentStatus->value] ?? [];
 
-        return in_array($newValue, $allowed, true);
+        return in_array($newStatus->value, $allowed, true);
     }
 
     /**
-     * Get allowed transitions from current status.
-     *
      * @return array<RepairStatus>
      */
-    public static function allowedTransitions(RepairStatus $currentStatus): array
+    public static function allowedTransitions(RepairFlow $flow, RepairStatus $currentStatus): array
     {
-        $currentValue = $currentStatus->value;
-        $allowedValues = self::TRANSITIONS[$currentValue] ?? [];
+        $allowedValues = self::TRANSITIONS[$flow->value][$currentStatus->value] ?? [];
 
-        return array_map(fn ($value) => RepairStatus::from($value), $allowedValues);
+        return array_map(fn (string $value): RepairStatus => RepairStatus::from($value), $allowedValues);
     }
 
-    /**
-     * Validate transition or throw ValidationException.
-     */
-    public static function validateTransition(RepairStatus $currentStatus, RepairStatus $newStatus): void
+    public static function validateTransition(RepairFlow $flow, RepairStatus $currentStatus, RepairStatus $newStatus): void
     {
-        if (! self::isAllowed($currentStatus, $newStatus)) {
+        if (! self::isAllowed($flow, $currentStatus, $newStatus)) {
             throw ValidationException::withMessages([
                 'repair_status' => [
-                    'Invalid repair status transition from '.$currentStatus->value.' to '.$newStatus->value.'.',
+                    'Invalid repair status transition for '.$flow->value.' repair from '.$currentStatus->value.' to '.$newStatus->value.'.',
                 ],
             ]);
         }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Domain\ExceptionsReturns\Enums\RepairFlow;
 use App\Domain\ExceptionsReturns\Enums\RepairStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -17,8 +18,11 @@ class Repair extends Model
         'repair_date',
         'stock_item_id',
         'customer_id',
+        'repair_flow',
         'issue_description',
         'repair_status',
+        'returned_to_customer_date',
+        'return_tracking_number',
         'remarks',
         'created_by',
     ];
@@ -27,7 +31,9 @@ class Repair extends Model
     {
         return [
             'repair_date' => 'date',
+            'repair_flow' => RepairFlow::class,
             'repair_status' => RepairStatus::class,
+            'returned_to_customer_date' => 'date',
         ];
     }
 

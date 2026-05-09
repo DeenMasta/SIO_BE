@@ -5,6 +5,7 @@ namespace App\Application\ExceptionsReturns\Repairs\UseCases;
 use App\Application\Contracts\Repositories\RepairRepository;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
+use App\Domain\ExceptionsReturns\Enums\RepairFlow;
 use App\Domain\ExceptionsReturns\Enums\RepairStatus;
 use App\Domain\ExceptionsReturns\Services\RepairStateMachine;
 use App\Domain\InventoryCore\Enums\MovementType;
@@ -33,18 +34,22 @@ class UpdateRepairStatusUseCase implements UseCase
         $status = RepairStatus::from((string) $data['repair_status']);
 
         return DB::transaction(function () use ($repair, $status, $data): Repair {
-            // Validate transition using state machine
-            RepairStateMachine::validateTransition($repair->repair_status, $status);
+            RepairStateMachine::validateTransition($repair->repair_flow, $repair->repair_status, $status);
+            $this->validateStatusPayload($repair->repair_flow, $status, $data);
 
-            // Save the old status before updating
             $oldStatus = $repair->repair_status;
 
             $updated = $this->repairs->update($repair, [
                 'repair_status' => $status,
+                'returned_to_customer_date' => $status === RepairStatus::ReturnedToCustomer
+                    ? $data['returned_to_customer_date']
+                    : $repair->returned_to_customer_date,
+                'return_tracking_number' => array_key_exists('return_tracking_number', $data)
+                    ? $data['return_tracking_number']
+                    : $repair->return_tracking_number,
                 'remarks' => $data['remarks'] ?? $repair->remarks,
             ]);
 
-            // Log status history
             RepairStatusHistory::query()->create([
                 'repair_id' => $repair->id,
                 'from_status' => $oldStatus?->value,
@@ -54,9 +59,10 @@ class UpdateRepairStatusUseCase implements UseCase
                 'changed_at' => now(),
             ]);
 
-            // Handle side effects based on new status
             if ($status === RepairStatus::Completed) {
                 $this->handleCompletion($repair, $data);
+            } elseif ($status === RepairStatus::ReturnedToCustomer) {
+                $this->handleReturnToCustomer($repair, $data);
             } elseif ($status === RepairStatus::Cancelled) {
                 $this->handleCancellation($repair, $data);
             }
@@ -68,16 +74,17 @@ class UpdateRepairStatusUseCase implements UseCase
                 entityId: (int) $updated->id,
                 action: AuditAction::Update,
                 oldValues: ['repair_status' => $oldStatus?->value],
-                newValues: ['repair_status' => $updated->repair_status?->value],
+                newValues: [
+                    'repair_status' => $updated->repair_status?->value,
+                    'returned_to_customer_date' => $updated->returned_to_customer_date?->toDateString(),
+                    'return_tracking_number' => $updated->return_tracking_number,
+                ],
             );
 
             return $updated;
         });
     }
 
-    /**
-     * Handle repair completion: Move item back to IN_STOCK status.
-     */
     private function handleCompletion(Repair $repair, array $data): void
     {
         $stockItem = StockItem::query()->lockForUpdate()->findOrFail((int) $repair->stock_item_id);
@@ -104,15 +111,16 @@ class UpdateRepairStatusUseCase implements UseCase
 
     }
 
-    /**
-     * Handle repair cancellation: Move item back to IN_STOCK status (unrepairable).
-     */
     private function handleCancellation(Repair $repair, array $data): void
     {
         $stockItem = StockItem::query()->lockForUpdate()->findOrFail((int) $repair->stock_item_id);
+        $targetStatus = $repair->repair_flow === RepairFlow::Customer
+            ? StockItemStatus::Delivered
+            : StockItemStatus::InStock;
+
         $stockItem->update([
-            'current_status' => StockItemStatus::InStock,
-            'is_available' => false, // Mark as unavailable (unrepairable)
+            'current_status' => $targetStatus,
+            'is_available' => false,
             'last_movement_at' => now(),
         ]);
 
@@ -126,10 +134,64 @@ class UpdateRepairStatusUseCase implements UseCase
             'qty_in' => 0,
             'qty_out' => 0,
             'from_status' => StockItemStatus::UnderRepair->value,
-            'to_status' => StockItemStatus::InStock->value,
+            'to_status' => $targetStatus->value,
             'performed_by' => (int) $data['updated_by'],
             'remarks' => $data['remarks'] ?? 'Repair cancelled',
         ]);
 
+    }
+
+    private function handleReturnToCustomer(Repair $repair, array $data): void
+    {
+        $stockItem = StockItem::query()->lockForUpdate()->findOrFail((int) $repair->stock_item_id);
+        $stockItem->update([
+            'current_status' => StockItemStatus::Delivered,
+            'is_available' => false,
+            'last_movement_at' => now(),
+        ]);
+
+        $remarks = $data['remarks'] ?? 'Returned to customer';
+        if (! empty($data['return_tracking_number'])) {
+            $remarks .= ' | Tracking: '.$data['return_tracking_number'];
+        }
+
+        StockMovement::query()->create([
+            'movement_datetime' => now(),
+            'product_id' => $stockItem->product_id,
+            'stock_item_id' => $stockItem->id,
+            'movement_type' => MovementType::RepairReturnToCustomer,
+            'reference_table' => 'repairs',
+            'reference_id' => $repair->id,
+            'qty_in' => 0,
+            'qty_out' => 1,
+            'from_status' => StockItemStatus::UnderRepair->value,
+            'to_status' => StockItemStatus::Delivered->value,
+            'performed_by' => (int) $data['updated_by'],
+            'remarks' => $remarks,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function validateStatusPayload(RepairFlow $flow, RepairStatus $status, array $data): void
+    {
+        if ($flow === RepairFlow::Internal && in_array($status, [RepairStatus::ReadyToReturn, RepairStatus::ReturnedToCustomer], true)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'repair_status' => ['Internal repairs cannot use customer return statuses.'],
+            ]);
+        }
+
+        if ($flow === RepairFlow::Customer && $status === RepairStatus::Completed) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'repair_status' => ['Customer-owned repairs must move to READY_TO_RETURN before RETURNED_TO_CUSTOMER.'],
+            ]);
+        }
+
+        if ($status === RepairStatus::ReturnedToCustomer && empty($data['returned_to_customer_date'])) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'returned_to_customer_date' => ['Return to customer date is required when marking repair as RETURNED_TO_CUSTOMER.'],
+            ]);
+        }
     }
 }

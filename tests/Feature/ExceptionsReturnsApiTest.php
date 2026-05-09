@@ -18,7 +18,7 @@ class ExceptionsReturnsApiTest extends TestCase
     public function test_admin_can_create_and_complete_repair(): void
     {
         $admin = User::factory()->admin()->create();
-        [$stockItemId] = $this->createDeliveredDevice($admin);
+        [$stockItemId] = $this->createInStockDevice($admin);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -26,6 +26,7 @@ class ExceptionsReturnsApiTest extends TestCase
             'repair_transaction_number' => 'RPR-100001',
             'repair_date' => now()->toDateString(),
             'stock_item_id' => $stockItemId,
+            'repair_flow' => 'INTERNAL',
             'issue_description' => 'Unit cannot power on',
         ])->assertCreated();
 
@@ -118,7 +119,7 @@ class ExceptionsReturnsApiTest extends TestCase
     {
         $staff = User::factory()->staff()->create();
         $admin = User::factory()->admin()->create();
-        [$repairStockItemId] = $this->createDeliveredDevice($admin);
+        [$repairStockItemId] = $this->createInStockDevice($admin);
         [$returnStockItemId, $deliveredProductId, $customerId, $stockOutId, $stockOutLineId] = $this->createDeliveredDevice($admin);
         [$receivedItemId, $receivedProductId, $supplierId] = $this->createReceivedDevice($admin);
 
@@ -128,6 +129,7 @@ class ExceptionsReturnsApiTest extends TestCase
             'repair_transaction_number' => 'RPR-100002',
             'repair_date' => now()->toDateString(),
             'stock_item_id' => $repairStockItemId,
+            'repair_flow' => 'INTERNAL',
             'issue_description' => 'Broken port',
         ])->assertCreated();
 
@@ -168,7 +170,7 @@ class ExceptionsReturnsApiTest extends TestCase
     public function test_repair_export_returns_filtered_csv(): void
     {
         $admin = User::factory()->admin()->create();
-        [$stockItemId] = $this->createDeliveredDevice($admin);
+        [$stockItemId] = $this->createInStockDevice($admin);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -176,6 +178,7 @@ class ExceptionsReturnsApiTest extends TestCase
             'repair_transaction_number' => 'RPR-EXPORT-001',
             'repair_date' => now()->toDateString(),
             'stock_item_id' => $stockItemId,
+            'repair_flow' => 'INTERNAL',
             'issue_description' => 'Battery issue',
         ])->assertCreated();
 

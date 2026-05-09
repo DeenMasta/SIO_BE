@@ -101,11 +101,14 @@ class RepairController extends Controller
             headers: [
                 'repair_transaction_number',
                 'repair_date',
+                'repair_flow',
                 'serial_number',
                 'product_code',
                 'product_name',
                 'customer_name',
                 'repair_status',
+                'returned_to_customer_date',
+                'return_tracking_number',
                 'issue_description',
                 'remarks',
             ],
@@ -140,11 +143,14 @@ class RepairController extends Controller
             ->leftJoin('customers as c', 'c.id', '=', 'r.customer_id')
             ->selectRaw('r.repair_transaction_number')
             ->selectRaw('r.repair_date')
+            ->selectRaw('r.repair_flow')
             ->selectRaw('si.serial_number')
             ->selectRaw('p.product_code')
             ->selectRaw('p.product_name')
             ->selectRaw('c.customer_name')
             ->selectRaw('r.repair_status')
+            ->selectRaw('r.returned_to_customer_date')
+            ->selectRaw('r.return_tracking_number')
             ->selectRaw('r.issue_description')
             ->selectRaw('r.remarks')
             ->orderByDesc('r.id');
@@ -153,8 +159,10 @@ class RepairController extends Controller
         if ($search !== '') {
             $query->where(function ($searchQuery) use ($search): void {
                 $searchQuery->where('r.repair_transaction_number', 'like', '%'.$search.'%')
+                    ->orWhere('r.repair_flow', 'like', '%'.$search.'%')
                     ->orWhere('r.repair_status', 'like', '%'.$search.'%')
                     ->orWhere('r.issue_description', 'like', '%'.$search.'%')
+                    ->orWhere('r.return_tracking_number', 'like', '%'.$search.'%')
                     ->orWhere('si.serial_number', 'like', '%'.$search.'%')
                     ->orWhere('p.product_code', 'like', '%'.$search.'%')
                     ->orWhere('p.product_name', 'like', '%'.$search.'%')
@@ -163,6 +171,9 @@ class RepairController extends Controller
         }
         if (! empty($filters['status'])) {
             $query->where('r.repair_status', (string) $filters['status']);
+        }
+        if (! empty($filters['repair_flow'])) {
+            $query->where('r.repair_flow', (string) $filters['repair_flow']);
         }
 
         return $query->get();

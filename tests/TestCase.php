@@ -78,4 +78,54 @@ abstract class TestCase extends BaseTestCase
 
         return [$stockItemId, (int) $product->id, (int) $customer->id, $stockOutId, $stockOutLineId];
     }
+
+    /**
+     * Helper method to create a QC-passed in-stock device.
+     * Runs through: Stock In -> QC Pass
+     * Returns: [stockItemId, productId, supplierId]
+     *
+     * @return array{int, int, int}
+     */
+    protected function createInStockDevice(User $admin): array
+    {
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'product_code' => 'DEV-INS-'.fake()->numerify('######'),
+            'product_type' => 'DEVICE',
+        ]);
+
+        $stockIn = $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-INS-'.fake()->numerify('######'),
+            'stock_in_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [
+                [
+                    'product_id' => $product->id,
+                    'received_qty' => 1,
+                    'serial_numbers' => ['SN-INS-'.fake()->numerify('######')],
+                ],
+            ],
+        ])->assertCreated();
+
+        $stockInId = (int) $stockIn->json('data.id');
+        $stockItemId = (int) $stockIn->json('data.lines.0.stock_items.0.id');
+
+        $this->postJson('/api/qc-documents', [
+            'document_number' => 'QC-INS-'.fake()->numerify('######'),
+            'stock_in_id' => $stockInId,
+            'date' => now()->toDateString(),
+            'lines' => [
+                [
+                    'stock_item_id' => $stockItemId,
+                    'result' => 'PASSED',
+                    'checked_conditions' => [],
+                    'checked_accessories' => [],
+                ],
+            ],
+        ])->assertCreated();
+
+        return [$stockItemId, (int) $product->id, (int) $supplier->id];
+    }
 }

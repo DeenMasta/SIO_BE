@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Domain\ExceptionsReturns\Enums\RepairFlow;
 use App\Domain\ExceptionsReturns\Enums\RepairStatus;
 use App\Domain\ExceptionsReturns\Services\RepairStateMachine;
+use App\Models\RepairStatusHistory;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -13,75 +15,51 @@ class SprintCRepairStateMachineTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_repair_status_machine_allows_valid_transition_open_to_in_progress(): void
+    public function test_internal_repair_status_machine_allows_open_to_completed(): void
     {
-        $oldStatus = RepairStatus::Open;
-        $newStatus = RepairStatus::InProgress;
-
-        $this->assertTrue(RepairStateMachine::isAllowed($oldStatus, $newStatus));
+        $this->assertTrue(RepairStateMachine::isAllowed(
+            RepairFlow::Internal,
+            RepairStatus::Open,
+            RepairStatus::Completed,
+        ));
     }
 
-    public function test_repair_status_machine_allows_valid_transition_open_to_cancelled(): void
+    public function test_customer_repair_status_machine_allows_ready_to_return_path(): void
     {
-        $oldStatus = RepairStatus::Open;
-        $newStatus = RepairStatus::Cancelled;
+        $this->assertTrue(RepairStateMachine::isAllowed(
+            RepairFlow::Customer,
+            RepairStatus::InProgress,
+            RepairStatus::ReadyToReturn,
+        ));
 
-        $this->assertTrue(RepairStateMachine::isAllowed($oldStatus, $newStatus));
+        $this->assertTrue(RepairStateMachine::isAllowed(
+            RepairFlow::Customer,
+            RepairStatus::ReadyToReturn,
+            RepairStatus::ReturnedToCustomer,
+        ));
     }
 
-    public function test_repair_status_machine_allows_valid_transition_open_to_completed(): void
+    public function test_customer_repair_status_machine_denies_completed_transition(): void
     {
-        $oldStatus = RepairStatus::Open;
-        $newStatus = RepairStatus::Completed;
-
-        $this->assertTrue(RepairStateMachine::isAllowed($oldStatus, $newStatus));
+        $this->assertFalse(RepairStateMachine::isAllowed(
+            RepairFlow::Customer,
+            RepairStatus::InProgress,
+            RepairStatus::Completed,
+        ));
     }
 
-    public function test_repair_status_machine_allows_valid_transition_in_progress_to_completed(): void
+    public function test_internal_repair_status_machine_denies_customer_return_transition(): void
     {
-        $oldStatus = RepairStatus::InProgress;
-        $newStatus = RepairStatus::Completed;
-
-        $this->assertTrue(RepairStateMachine::isAllowed($oldStatus, $newStatus));
+        $this->assertFalse(RepairStateMachine::isAllowed(
+            RepairFlow::Internal,
+            RepairStatus::InProgress,
+            RepairStatus::ReadyToReturn,
+        ));
     }
 
-    public function test_repair_status_machine_allows_valid_transition_in_progress_to_cancelled(): void
+    public function test_internal_repair_status_machine_allows_expected_transitions_from_open(): void
     {
-        $oldStatus = RepairStatus::InProgress;
-        $newStatus = RepairStatus::Cancelled;
-
-        $this->assertTrue(RepairStateMachine::isAllowed($oldStatus, $newStatus));
-    }
-
-    public function test_repair_status_machine_denies_transition_from_completed(): void
-    {
-        $oldStatus = RepairStatus::Completed;
-
-        $this->assertFalse(RepairStateMachine::isAllowed($oldStatus, RepairStatus::Open));
-        $this->assertFalse(RepairStateMachine::isAllowed($oldStatus, RepairStatus::InProgress));
-        $this->assertFalse(RepairStateMachine::isAllowed($oldStatus, RepairStatus::Cancelled));
-    }
-
-    public function test_repair_status_machine_denies_transition_from_cancelled(): void
-    {
-        $oldStatus = RepairStatus::Cancelled;
-
-        $this->assertFalse(RepairStateMachine::isAllowed($oldStatus, RepairStatus::Open));
-        $this->assertFalse(RepairStateMachine::isAllowed($oldStatus, RepairStatus::InProgress));
-        $this->assertFalse(RepairStateMachine::isAllowed($oldStatus, RepairStatus::Completed));
-    }
-
-    public function test_repair_status_machine_denies_transition_in_progress_to_open(): void
-    {
-        $oldStatus = RepairStatus::InProgress;
-        $newStatus = RepairStatus::Open;
-
-        $this->assertFalse(RepairStateMachine::isAllowed($oldStatus, $newStatus));
-    }
-
-    public function test_repair_status_machine_allows_transitions_from_open(): void
-    {
-        $allowed = RepairStateMachine::allowedTransitions(RepairStatus::Open);
+        $allowed = RepairStateMachine::allowedTransitions(RepairFlow::Internal, RepairStatus::Open);
 
         $this->assertCount(3, $allowed);
         $this->assertContains(RepairStatus::InProgress, $allowed);
@@ -89,33 +67,19 @@ class SprintCRepairStateMachineTest extends TestCase
         $this->assertContains(RepairStatus::Completed, $allowed);
     }
 
-    public function test_repair_status_machine_allows_transitions_from_in_progress(): void
+    public function test_customer_repair_status_machine_allows_expected_transitions_from_ready_to_return(): void
     {
-        $allowed = RepairStateMachine::allowedTransitions(RepairStatus::InProgress);
+        $allowed = RepairStateMachine::allowedTransitions(RepairFlow::Customer, RepairStatus::ReadyToReturn);
 
         $this->assertCount(2, $allowed);
-        $this->assertContains(RepairStatus::Completed, $allowed);
+        $this->assertContains(RepairStatus::ReturnedToCustomer, $allowed);
         $this->assertContains(RepairStatus::Cancelled, $allowed);
     }
 
-    public function test_repair_status_machine_has_no_transitions_from_completed(): void
-    {
-        $allowed = RepairStateMachine::allowedTransitions(RepairStatus::Completed);
-
-        $this->assertEmpty($allowed);
-    }
-
-    public function test_repair_status_machine_has_no_transitions_from_cancelled(): void
-    {
-        $allowed = RepairStateMachine::allowedTransitions(RepairStatus::Cancelled);
-
-        $this->assertEmpty($allowed);
-    }
-
-    public function test_records_status_history_when_repair_status_changes(): void
+    public function test_records_status_history_when_internal_repair_status_changes(): void
     {
         $admin = User::factory()->admin()->create();
-        [$stockItemId] = $this->createDeliveredDevice($admin);
+        [$stockItemId] = $this->createInStockDevice($admin);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -123,6 +87,7 @@ class SprintCRepairStateMachineTest extends TestCase
             'repair_transaction_number' => 'RPR-SH-001',
             'repair_date' => now()->toDateString(),
             'stock_item_id' => $stockItemId,
+            'repair_flow' => 'INTERNAL',
             'issue_description' => 'Power issue',
         ])->json('data');
 
@@ -141,10 +106,10 @@ class SprintCRepairStateMachineTest extends TestCase
         ]);
     }
 
-    public function test_tracks_full_status_history_timeline(): void
+    public function test_tracks_full_status_history_timeline_for_customer_repair(): void
     {
         $admin = User::factory()->admin()->create();
-        [$stockItemId] = $this->createDeliveredDevice($admin);
+        [$stockItemId, , $customerId] = $this->createDeliveredDevice($admin);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -152,39 +117,48 @@ class SprintCRepairStateMachineTest extends TestCase
             'repair_transaction_number' => 'RPR-SH-002',
             'repair_date' => now()->toDateString(),
             'stock_item_id' => $stockItemId,
+            'repair_flow' => 'CUSTOMER',
+            'customer_id' => $customerId,
             'issue_description' => 'Screen broken',
         ])->json('data');
 
         $repairId = (int) $repair['id'];
 
-        // Open → InProgress
         $this->patchJson("/api/repairs/{$repairId}/status", [
             'repair_status' => 'IN_PROGRESS',
             'remarks' => 'Started work',
         ])->assertOk();
 
-        // InProgress → Completed
         $this->patchJson("/api/repairs/{$repairId}/status", [
-            'repair_status' => 'COMPLETED',
+            'repair_status' => 'READY_TO_RETURN',
             'remarks' => 'Repair finished',
         ])->assertOk();
 
-        $histories = \App\Models\RepairStatusHistory::query()
+        $this->patchJson("/api/repairs/{$repairId}/status", [
+            'repair_status' => 'RETURNED_TO_CUSTOMER',
+            'returned_to_customer_date' => now()->toDateString(),
+            'return_tracking_number' => 'TRACK-12345',
+            'remarks' => 'Courier handoff complete',
+        ])->assertOk();
+
+        $histories = RepairStatusHistory::query()
             ->where('repair_id', $repairId)
             ->orderBy('changed_at')
             ->get();
 
-        $this->assertCount(2, $histories);
+        $this->assertCount(3, $histories);
         $this->assertEquals('OPEN', $histories[0]->from_status);
         $this->assertEquals('IN_PROGRESS', $histories[0]->to_status);
         $this->assertEquals('IN_PROGRESS', $histories[1]->from_status);
-        $this->assertEquals('COMPLETED', $histories[1]->to_status);
+        $this->assertEquals('READY_TO_RETURN', $histories[1]->to_status);
+        $this->assertEquals('READY_TO_RETURN', $histories[2]->from_status);
+        $this->assertEquals('RETURNED_TO_CUSTOMER', $histories[2]->to_status);
     }
 
     public function test_rejects_invalid_repair_status_transition(): void
     {
         $admin = User::factory()->admin()->create();
-        [$stockItemId] = $this->createDeliveredDevice($admin);
+        [$stockItemId] = $this->createInStockDevice($admin);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -192,27 +166,26 @@ class SprintCRepairStateMachineTest extends TestCase
             'repair_transaction_number' => 'RPR-SH-003',
             'repair_date' => now()->toDateString(),
             'stock_item_id' => $stockItemId,
+            'repair_flow' => 'INTERNAL',
             'issue_description' => 'Battery problem',
         ])->json('data');
 
         $repairId = (int) $repair['id'];
 
-        // Transition: Open → InProgress
         $this->patchJson("/api/repairs/{$repairId}/status", [
             'repair_status' => 'IN_PROGRESS',
         ])->assertOk();
 
-        // Try invalid: InProgress → Open (not allowed)
         $this->patchJson("/api/repairs/{$repairId}/status", [
             'repair_status' => 'OPEN',
         ])->assertUnprocessable()
             ->assertJsonValidationErrors('repair_status');
     }
 
-    public function test_marks_item_unavailable_when_repair_is_cancelled(): void
+    public function test_marks_item_unavailable_when_internal_repair_is_cancelled(): void
     {
         $admin = User::factory()->admin()->create();
-        [$stockItemId] = $this->createDeliveredDevice($admin);
+        [$stockItemId] = $this->createInStockDevice($admin);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -220,6 +193,7 @@ class SprintCRepairStateMachineTest extends TestCase
             'repair_transaction_number' => 'RPR-SH-004',
             'repair_date' => now()->toDateString(),
             'stock_item_id' => $stockItemId,
+            'repair_flow' => 'INTERNAL',
             'issue_description' => 'Unrepairable',
         ])->json('data');
 
@@ -243,10 +217,10 @@ class SprintCRepairStateMachineTest extends TestCase
         ]);
     }
 
-    public function test_marks_item_available_when_repair_is_completed(): void
+    public function test_marks_item_available_when_internal_repair_is_completed(): void
     {
         $admin = User::factory()->admin()->create();
-        [$stockItemId] = $this->createDeliveredDevice($admin);
+        [$stockItemId] = $this->createInStockDevice($admin);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -254,6 +228,7 @@ class SprintCRepairStateMachineTest extends TestCase
             'repair_transaction_number' => 'RPR-SH-005',
             'repair_date' => now()->toDateString(),
             'stock_item_id' => $stockItemId,
+            'repair_flow' => 'INTERNAL',
             'issue_description' => 'Fixable issue',
         ])->json('data');
 
@@ -274,6 +249,83 @@ class SprintCRepairStateMachineTest extends TestCase
             'reference_table' => 'repairs',
             'reference_id' => $repairId,
             'movement_type' => 'REPAIR_OUT',
+        ]);
+    }
+
+    public function test_customer_repair_requires_return_date_when_returned_to_customer(): void
+    {
+        $admin = User::factory()->admin()->create();
+        [$stockItemId, , $customerId] = $this->createDeliveredDevice($admin);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $repair = $this->postJson('/api/repairs', [
+            'repair_transaction_number' => 'RPR-SH-006',
+            'repair_date' => now()->toDateString(),
+            'stock_item_id' => $stockItemId,
+            'repair_flow' => 'CUSTOMER',
+            'customer_id' => $customerId,
+            'issue_description' => 'Face ID issue',
+        ])->json('data');
+
+        $repairId = (int) $repair['id'];
+
+        $this->patchJson("/api/repairs/{$repairId}/status", [
+            'repair_status' => 'READY_TO_RETURN',
+        ])->assertOk();
+
+        $this->patchJson("/api/repairs/{$repairId}/status", [
+            'repair_status' => 'RETURNED_TO_CUSTOMER',
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors('returned_to_customer_date');
+    }
+
+    public function test_customer_repair_returns_item_to_delivered_status(): void
+    {
+        $admin = User::factory()->admin()->create();
+        [$stockItemId, , $customerId] = $this->createDeliveredDevice($admin);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $repair = $this->postJson('/api/repairs', [
+            'repair_transaction_number' => 'RPR-SH-007',
+            'repair_date' => now()->toDateString(),
+            'stock_item_id' => $stockItemId,
+            'repair_flow' => 'CUSTOMER',
+            'customer_id' => $customerId,
+            'issue_description' => 'Speaker issue',
+        ])->json('data');
+
+        $repairId = (int) $repair['id'];
+
+        $this->patchJson("/api/repairs/{$repairId}/status", [
+            'repair_status' => 'READY_TO_RETURN',
+            'remarks' => 'Ready for courier',
+        ])->assertOk();
+
+        $this->patchJson("/api/repairs/{$repairId}/status", [
+            'repair_status' => 'RETURNED_TO_CUSTOMER',
+            'returned_to_customer_date' => now()->toDateString(),
+            'return_tracking_number' => 'TRACK-67890',
+            'remarks' => 'Sent back to customer',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('repairs', [
+            'id' => $repairId,
+            'repair_status' => 'RETURNED_TO_CUSTOMER',
+            'return_tracking_number' => 'TRACK-67890',
+        ]);
+
+        $this->assertDatabaseHas('stock_items', [
+            'id' => $stockItemId,
+            'current_status' => 'DELIVERED',
+            'is_available' => 0,
+        ]);
+
+        $this->assertDatabaseHas('stock_movements', [
+            'reference_table' => 'repairs',
+            'reference_id' => $repairId,
+            'movement_type' => 'REPAIR_RETURN_TO_CUSTOMER',
         ]);
     }
 }

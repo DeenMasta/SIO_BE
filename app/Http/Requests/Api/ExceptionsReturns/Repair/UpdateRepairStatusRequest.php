@@ -20,6 +20,8 @@ class UpdateRepairStatusRequest extends StrictFormRequest
     {
         return [
             'repair_status' => ['required', Rule::enum(RepairStatus::class)],
+            'returned_to_customer_date' => ['nullable', 'date'],
+            'return_tracking_number' => ['nullable', 'string', 'max:100'],
             'remarks' => ['nullable', 'string', 'max:2000'],
         ];
     }
@@ -28,6 +30,8 @@ class UpdateRepairStatusRequest extends StrictFormRequest
     {
         return [
             'repair_status',
+            'returned_to_customer_date',
+            'return_tracking_number',
             'remarks',
         ];
     }

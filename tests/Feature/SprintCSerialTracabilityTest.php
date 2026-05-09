@@ -88,7 +88,7 @@ class SprintCSerialTracabilityTest extends TestCase
     public function test_serial_trace_for_repair_path(): void
     {
         $admin = User::factory()->admin()->create();
-        [$stockItemId, $productId, $customerId, $stockOutId, $stockOutLineId] = $this->createDeliveredDevice($admin);
+        [$stockItemId] = $this->createInStockDevice($admin);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -97,6 +97,7 @@ class SprintCSerialTracabilityTest extends TestCase
             'repair_transaction_number' => 'RPR-TRB-001',
             'repair_date' => now()->toDateString(),
             'stock_item_id' => $stockItemId,
+            'repair_flow' => 'INTERNAL',
             'issue_description' => 'Device not turning on',
         ])->assertCreated();
 
@@ -127,7 +128,7 @@ class SprintCSerialTracabilityTest extends TestCase
     public function test_serial_trace_for_cancelled_repair(): void
     {
         $admin = User::factory()->admin()->create();
-        [$stockItemId] = $this->createDeliveredDevice($admin);
+        [$stockItemId] = $this->createInStockDevice($admin);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -136,6 +137,7 @@ class SprintCSerialTracabilityTest extends TestCase
             'repair_transaction_number' => 'RPR-TRB-002',
             'repair_date' => now()->toDateString(),
             'stock_item_id' => $stockItemId,
+            'repair_flow' => 'INTERNAL',
             'issue_description' => 'Unrepairable damage',
         ])->assertCreated();
 
