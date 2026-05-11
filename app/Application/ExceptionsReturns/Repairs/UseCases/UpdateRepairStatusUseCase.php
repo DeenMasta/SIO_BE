@@ -5,6 +5,7 @@ namespace App\Application\ExceptionsReturns\Repairs\UseCases;
 use App\Application\Contracts\Repositories\RepairRepository;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
+use App\Application\Support\UserNotificationService;
 use App\Domain\ExceptionsReturns\Enums\RepairFlow;
 use App\Domain\ExceptionsReturns\Enums\RepairStatus;
 use App\Domain\ExceptionsReturns\Services\RepairStateMachine;
@@ -22,6 +23,7 @@ class UpdateRepairStatusUseCase implements UseCase
     public function __construct(
         private readonly RepairRepository $repairs,
         private readonly AuditLogger $auditLogger,
+        private readonly UserNotificationService $userNotificationService,
     )
     {
     }
@@ -79,6 +81,20 @@ class UpdateRepairStatusUseCase implements UseCase
                     'returned_to_customer_date' => $updated->returned_to_customer_date?->toDateString(),
                     'return_tracking_number' => $updated->return_tracking_number,
                 ],
+            );
+
+            $this->userNotificationService->notifyAllActiveUsers(
+                eventType: 'repair.status-changed',
+                title: 'Repair status updated',
+                message: sprintf('Repair %s moved from %s to %s.', $updated->repair_transaction_number, $oldStatus?->value ?? 'UNKNOWN', $updated->repair_status?->value ?? 'UNKNOWN'),
+                data: [
+                    'repair_id' => (int) $updated->id,
+                    'repair_transaction_number' => $updated->repair_transaction_number,
+                    'from_status' => $oldStatus?->value,
+                    'to_status' => $updated->repair_status?->value,
+                ],
+                exceptUserId: (int) $data['updated_by'],
+                level: in_array($status, [RepairStatus::Cancelled], true) ? 'warning' : 'info',
             );
 
             return $updated;

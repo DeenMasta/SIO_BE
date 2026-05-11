@@ -45,6 +45,25 @@ class SearchController extends Controller
                 'qc_status',
                 'last_movement_at',
             ])
+            ->selectSub(function ($query) {
+                $query->from('stock_out_line_items')
+                    ->join('stock_out_lines', 'stock_out_lines.id', '=', 'stock_out_line_items.stock_out_line_id')
+                    ->join('stock_out', 'stock_out.id', '=', 'stock_out_lines.stock_out_id')
+                    ->select('stock_out.customer_id')
+                    ->whereColumn('stock_out_line_items.stock_item_id', 'stock_items.id')
+                    ->orderByDesc('stock_out.id')
+                    ->limit(1);
+            }, 'current_customer_id')
+            ->selectSub(function ($query) {
+                $query->from('stock_out_line_items')
+                    ->join('stock_out_lines', 'stock_out_lines.id', '=', 'stock_out_line_items.stock_out_line_id')
+                    ->join('stock_out', 'stock_out.id', '=', 'stock_out_lines.stock_out_id')
+                    ->join('customers', 'customers.id', '=', 'stock_out.customer_id')
+                    ->select('customers.customer_name')
+                    ->whereColumn('stock_out_line_items.stock_item_id', 'stock_items.id')
+                    ->orderByDesc('stock_out.id')
+                    ->limit(1);
+            }, 'current_customer_name')
             ->when(! empty($filters['query'] ?? ''), function (Builder $query) use ($filters): void {
                 $search = trim((string) $filters['query']);
 

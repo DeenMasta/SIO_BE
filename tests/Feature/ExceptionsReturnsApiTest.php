@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Customer;
 use App\Models\Product;
+use App\Models\StockItem;
 use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\User;
@@ -273,6 +274,27 @@ class ExceptionsReturnsApiTest extends TestCase
         $this->assertStringContainsString('return_transaction_number', $content);
         $this->assertStringContainsString('CRT-EXPORT-001', $content);
         $this->assertStringContainsString('INV-CR-EXPORT', $content);
+    }
+
+    public function test_serial_search_returns_product_and_current_customer_for_delivered_item(): void
+    {
+        $admin = User::factory()->admin()->create();
+        [$stockItemId, $productId, $customerId] = $this->createDeliveredDevice($admin);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $stockItem = StockItem::query()->findOrFail($stockItemId);
+        $customer = Customer::query()->findOrFail($customerId);
+        $product = Product::query()->findOrFail($productId);
+
+        $response = $this->getJson('/api/search/serials?query='.$stockItem->serial_number.'&per_page=20')
+            ->assertOk();
+
+        $response->assertJsonPath('data.0.id', $stockItemId);
+        $response->assertJsonPath('data.0.product.id', $productId);
+        $response->assertJsonPath('data.0.product.product_code', $product->product_code);
+        $response->assertJsonPath('data.0.current_customer_id', $customerId);
+        $response->assertJsonPath('data.0.current_customer_name', $customer->customer_name);
     }
 
     /**

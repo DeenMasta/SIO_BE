@@ -9,6 +9,7 @@ use App\Application\PurchasingInbound\PurchaseOrders\UseCases\UpdatePurchaseOrde
 use App\Application\Support\AuditLogger;
 use App\Application\Support\ApiResponse;
 use App\Application\Support\DocumentNumberGenerator;
+use App\Application\Support\UserNotificationService;
 use App\Application\ReportingAudit\Reports\Services\ExportService;
 use App\Domain\PurchasingInbound\Enums\PurchaseOrderStatus;
 use App\Domain\ReportingAudit\Enums\AuditAction;
@@ -34,6 +35,7 @@ class PurchaseOrderController extends Controller
         private readonly AuditLogger $auditLogger,
         private readonly DocumentNumberGenerator $documentNumberGenerator,
         private readonly ExportService $exportService,
+        private readonly UserNotificationService $userNotificationService,
     ) {
     }
 
@@ -222,6 +224,20 @@ class PurchaseOrderController extends Controller
             action: $auditAction,
             oldValues: ['status' => $currentStatus?->value],
             newValues: ['status' => $toStatus->value, 'transition' => $transition],
+        );
+
+        $this->userNotificationService->notifyAllActiveUsers(
+            eventType: 'purchase-order.status-changed',
+            title: 'Purchase order '.$transition,
+            message: sprintf('Purchase order %s is now %s.', $purchaseOrder->po_number, $toStatus->value),
+            data: [
+                'purchase_order_id' => (int) $purchaseOrder->id,
+                'po_number' => $purchaseOrder->po_number,
+                'status' => $toStatus->value,
+                'transition' => $transition,
+            ],
+            exceptUserId: $userId,
+            level: in_array($toStatus, [PurchaseOrderStatus::Cancelled], true) ? 'warning' : 'info',
         );
 
         return $purchaseOrder;

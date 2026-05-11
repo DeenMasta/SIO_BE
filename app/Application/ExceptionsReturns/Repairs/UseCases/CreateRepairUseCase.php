@@ -5,6 +5,7 @@ namespace App\Application\ExceptionsReturns\Repairs\UseCases;
 use App\Application\Contracts\Repositories\RepairRepository;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
+use App\Application\Support\UserNotificationService;
 use App\Domain\ExceptionsReturns\Enums\RepairFlow;
 use App\Domain\ExceptionsReturns\Enums\RepairStatus;
 use App\Domain\InventoryCore\Enums\MovementType;
@@ -22,6 +23,7 @@ class CreateRepairUseCase implements UseCase
     public function __construct(
         private readonly RepairRepository $repairs,
         private readonly AuditLogger $auditLogger,
+        private readonly UserNotificationService $userNotificationService,
     )
     {
     }
@@ -85,6 +87,20 @@ class CreateRepairUseCase implements UseCase
                     'repair_status' => $repair->repair_status?->value,
                     'customer_id' => $repair->customer_id,
                 ],
+            );
+
+            $this->userNotificationService->notifyAllActiveUsers(
+                eventType: 'repair.created',
+                title: 'Repair opened',
+                message: sprintf('Repair %s was opened with %s flow.', $repair->repair_transaction_number, $repair->repair_flow?->value ?? 'unknown'),
+                data: [
+                    'repair_id' => (int) $repair->id,
+                    'repair_transaction_number' => $repair->repair_transaction_number,
+                    'repair_flow' => $repair->repair_flow?->value,
+                    'repair_status' => $repair->repair_status?->value,
+                ],
+                exceptUserId: (int) $data['created_by'],
+                level: 'warning',
             );
 
             return $repair;

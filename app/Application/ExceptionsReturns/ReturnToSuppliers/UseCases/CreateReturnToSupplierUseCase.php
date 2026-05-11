@@ -6,6 +6,7 @@ use App\Application\Contracts\Repositories\ReturnToSupplierRepository;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\StockBalanceUpdater;
+use App\Application\Support\UserNotificationService;
 use App\Domain\ExceptionsReturns\Enums\ExceptionTransactionStatus;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
@@ -24,6 +25,7 @@ class CreateReturnToSupplierUseCase implements UseCase
         private readonly ReturnToSupplierRepository $returns,
         private readonly AuditLogger $auditLogger,
         private readonly StockBalanceUpdater $stockBalanceUpdater,
+        private readonly UserNotificationService $userNotificationService,
     ) {
     }
 
@@ -95,6 +97,20 @@ class CreateReturnToSupplierUseCase implements UseCase
                     'rts_transaction_number' => $result->rts_transaction_number,
                     'status' => $result->status?->value,
                 ],
+            );
+
+            $this->userNotificationService->notifyAllActiveUsers(
+                eventType: 'return-to-supplier.posted',
+                title: 'Return to supplier posted',
+                message: sprintf('Return to supplier %s was posted.', $result->rts_transaction_number),
+                data: [
+                    'return_to_supplier_id' => (int) $result->id,
+                    'rts_transaction_number' => $result->rts_transaction_number,
+                    'status' => $result->status?->value,
+                    'supplier_id' => (int) $result->supplier_id,
+                ],
+                exceptUserId: (int) $data['created_by'],
+                level: 'warning',
             );
 
             return $result;

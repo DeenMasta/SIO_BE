@@ -5,6 +5,7 @@ namespace App\Application\ExceptionsReturns\CustomerReturns\UseCases;
 use App\Application\Contracts\Repositories\CustomerReturnRepository;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
+use App\Application\Support\UserNotificationService;
 use App\Domain\ExceptionsReturns\Enums\CustomerReturnNextAction;
 use App\Domain\ExceptionsReturns\Enums\ExceptionTransactionStatus;
 use App\Domain\InventoryCore\Enums\MovementType;
@@ -21,6 +22,7 @@ class CancelCustomerReturnUseCase implements UseCase
     public function __construct(
         private readonly CustomerReturnRepository $returns,
         private readonly AuditLogger $auditLogger,
+        private readonly UserNotificationService $userNotificationService,
     ) {
     }
 
@@ -96,6 +98,19 @@ class CancelCustomerReturnUseCase implements UseCase
                 action: AuditAction::Cancel,
                 oldValues: ['status' => ExceptionTransactionStatus::Posted->value],
                 newValues: ['status' => ExceptionTransactionStatus::Cancelled->value],
+            );
+
+            $this->userNotificationService->notifyAllActiveUsers(
+                eventType: 'customer-return.cancelled',
+                title: 'Customer return cancelled',
+                message: sprintf('Customer return %s was cancelled.', $return->return_transaction_number),
+                data: [
+                    'customer_return_id' => (int) $return->id,
+                    'return_transaction_number' => $return->return_transaction_number,
+                    'status' => $return->status?->value,
+                ],
+                exceptUserId: (int) $data['cancelled_by'],
+                level: 'warning',
             );
 
             return $return->fresh('lines');

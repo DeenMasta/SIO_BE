@@ -6,6 +6,7 @@ use App\Application\Contracts\Repositories\StockOutRepository;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\StockBalanceUpdater;
+use App\Application\Support\UserNotificationService;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemQcStatus;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
@@ -30,6 +31,7 @@ class PostStockOutUseCase implements UseCase
         private readonly StockOutRepository $stockOuts,
         private readonly AuditLogger $auditLogger,
         private readonly StockBalanceUpdater $stockBalanceUpdater,
+        private readonly UserNotificationService $userNotificationService,
     )
     {
     }
@@ -273,6 +275,37 @@ class PostStockOutUseCase implements UseCase
                     action: AuditAction::Post,
                     newValues: ['stock_out_number' => $result['stock_out']->stock_out_number, 'status' => $result['stock_out']->status?->value],
                 );
+
+                $this->userNotificationService->notifyAllActiveUsers(
+                    eventType: 'stock-out.posted',
+                    title: 'Stock out posted',
+                    message: sprintf('Stock out %s was posted.', $result['stock_out']->stock_out_number),
+                    data: [
+                        'stock_out_id' => (int) $result['stock_out']->id,
+                        'stock_out_number' => $result['stock_out']->stock_out_number,
+                        'sale_order_id' => $saleOrder?->id,
+                        'sale_order_status' => $saleOrder?->status?->value,
+                    ],
+                    exceptUserId: (int) $data['pic_id'],
+                    level: 'success',
+                );
+
+                if ($saleOrder !== null && $saleOrder->status === SaleOrderStatus::Fulfilled) {
+                    $this->userNotificationService->notifyAllActiveUsers(
+                        eventType: 'sale-order.status-changed',
+                        title: 'Sales order fulfilled',
+                        message: sprintf('Sales order %s is now FULFILLED.', $saleOrder->so_number),
+                        data: [
+                            'sale_order_id' => (int) $saleOrder->id,
+                            'so_number' => $saleOrder->so_number,
+                            'status' => $saleOrder->status->value,
+                            'transition' => 'auto-fulfilled',
+                            'trigger_stock_out_id' => (int) $result['stock_out']->id,
+                        ],
+                        exceptUserId: (int) $data['pic_id'],
+                        level: 'success',
+                    );
+                }
 
                 return $result;
             });

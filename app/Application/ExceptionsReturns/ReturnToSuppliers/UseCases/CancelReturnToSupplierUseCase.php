@@ -6,6 +6,7 @@ use App\Application\Contracts\Repositories\ReturnToSupplierRepository;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\StockBalanceUpdater;
+use App\Application\Support\UserNotificationService;
 use App\Domain\ExceptionsReturns\Enums\ExceptionTransactionStatus;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
@@ -22,6 +23,7 @@ class CancelReturnToSupplierUseCase implements UseCase
         private readonly ReturnToSupplierRepository $returns,
         private readonly AuditLogger $auditLogger,
         private readonly StockBalanceUpdater $stockBalanceUpdater,
+        private readonly UserNotificationService $userNotificationService,
     ) {
     }
 
@@ -112,6 +114,19 @@ class CancelReturnToSupplierUseCase implements UseCase
                 action: AuditAction::Cancel,
                 oldValues: ['status' => ExceptionTransactionStatus::Posted->value],
                 newValues: ['status' => ExceptionTransactionStatus::Cancelled->value],
+            );
+
+            $this->userNotificationService->notifyAllActiveUsers(
+                eventType: 'return-to-supplier.cancelled',
+                title: 'Return to supplier cancelled',
+                message: sprintf('Return to supplier %s was cancelled.', $return->rts_transaction_number),
+                data: [
+                    'return_to_supplier_id' => (int) $return->id,
+                    'rts_transaction_number' => $return->rts_transaction_number,
+                    'status' => $return->status?->value,
+                ],
+                exceptUserId: (int) $data['cancelled_by'],
+                level: 'warning',
             );
 
             return $return->fresh([

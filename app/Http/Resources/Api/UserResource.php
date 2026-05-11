@@ -18,6 +18,7 @@ class UserResource extends JsonResource
             'email' => $this->email,
             'role' => $this->role?->value,
             'status' => $this->status?->value,
+            'unread_notifications_count' => $this->whenCounted('unreadNotifications'),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

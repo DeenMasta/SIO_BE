@@ -5,6 +5,7 @@ namespace App\Application\ExceptionsReturns\CustomerReturns\UseCases;
 use App\Application\Contracts\Repositories\CustomerReturnRepository;
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
+use App\Application\Support\UserNotificationService;
 use App\Domain\ExceptionsReturns\Enums\CustomerReturnNextAction;
 use App\Domain\ExceptionsReturns\Enums\ExceptionTransactionStatus;
 use App\Domain\InventoryCore\Enums\MovementType;
@@ -22,6 +23,7 @@ class CreateCustomerReturnUseCase implements UseCase
     public function __construct(
         private readonly CustomerReturnRepository $returns,
         private readonly AuditLogger $auditLogger,
+        private readonly UserNotificationService $userNotificationService,
     )
     {
     }
@@ -124,6 +126,20 @@ class CreateCustomerReturnUseCase implements UseCase
                 entityId: (int) $result->id,
                 action: AuditAction::Post,
                 newValues: ['return_transaction_number' => $result->return_transaction_number, 'status' => $result->status?->value],
+            );
+
+            $this->userNotificationService->notifyAllActiveUsers(
+                eventType: 'customer-return.posted',
+                title: 'Customer return posted',
+                message: sprintf('Customer return %s was posted.', $result->return_transaction_number),
+                data: [
+                    'customer_return_id' => (int) $result->id,
+                    'return_transaction_number' => $result->return_transaction_number,
+                    'status' => $result->status?->value,
+                    'customer_id' => (int) $result->customer_id,
+                ],
+                exceptUserId: (int) $data['created_by'],
+                level: 'warning',
             );
 
             return $result;

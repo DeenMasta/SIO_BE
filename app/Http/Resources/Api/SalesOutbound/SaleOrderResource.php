@@ -17,7 +17,7 @@ class SaleOrderResource extends JsonResource
             'so_number' => $this->so_number,
             'so_date' => $this->so_date,
             'customer_id' => $this->customer_id,
-            'customer_name' => $this->customer?->name,
+            'customer_name' => $this->customer?->customer_name,
             'expected_delivery_date' => $this->expected_delivery_date,
             'invoice_number' => $this->invoice_number,
             'status' => $this->status?->value,

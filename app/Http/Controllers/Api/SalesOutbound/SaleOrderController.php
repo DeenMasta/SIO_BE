@@ -9,6 +9,7 @@ use App\Application\SalesOutbound\SalesOrders\UseCases\UpdateSaleOrderUseCase;
 use App\Application\Support\ApiResponse;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\DocumentNumberGenerator;
+use App\Application\Support\UserNotificationService;
 use App\Application\ReportingAudit\Reports\Services\ExportService;
 use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Domain\SalesOutbound\Enums\SaleOrderStatus;
@@ -35,6 +36,7 @@ class SaleOrderController extends Controller
         private readonly AuditLogger $auditLogger,
         private readonly DocumentNumberGenerator $documentNumberGenerator,
         private readonly ExportService $exportService,
+        private readonly UserNotificationService $userNotificationService,
     ) {
     }
 
@@ -42,8 +44,8 @@ class SaleOrderController extends Controller
     {
         $this->authorize('viewAny', SaleOrder::class);
 
-        $filters = $request->only(['status', 'customer_id']);
-        
+        $filters = $request->only(['status', 'customer_id', 'q']);
+
         $saleOrders = $this->listSaleOrders->execute([
             'per_page' => (int) $request->integer('per_page', 15),
             'filters' => $filters,
@@ -213,6 +215,20 @@ class SaleOrderController extends Controller
             action: $auditAction,
             oldValues: ['status' => $currentStatus?->value],
             newValues: ['status' => $toStatus->value, 'transition' => $transition],
+        );
+
+        $this->userNotificationService->notifyAllActiveUsers(
+            eventType: 'sale-order.status-changed',
+            title: 'Sales order '.$transition,
+            message: sprintf('Sales order %s is now %s.', $saleOrder->so_number, $toStatus->value),
+            data: [
+                'sale_order_id' => (int) $saleOrder->id,
+                'so_number' => $saleOrder->so_number,
+                'status' => $toStatus->value,
+                'transition' => $transition,
+            ],
+            exceptUserId: $userId,
+            level: $toStatus === SaleOrderStatus::Cancelled ? 'warning' : 'info',
         );
 
         return $saleOrder;

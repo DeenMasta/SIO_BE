@@ -4,6 +4,7 @@ namespace App\Application\PurchasingInbound\StockIn\UseCases;
 
 use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
+use App\Application\Support\UserNotificationService;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemQcStatus;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
@@ -19,6 +20,7 @@ class PostQcDocumentUseCase implements UseCase
 {
     public function __construct(
         private readonly AuditLogger $auditLogger,
+        private readonly UserNotificationService $userNotificationService,
     ) {
     }
 
@@ -163,6 +165,29 @@ class PostQcDocumentUseCase implements UseCase
                     'document_number' => $documentNumber,
                     'total_lines'     => count($lines),
                 ],
+            );
+
+            $failedCount = collect($lines)
+                ->filter(fn (array $line): bool => in_array((string) $line['result'], [StockItemQcStatus::Failed->value, StockItemQcStatus::Partial->value], true))
+                ->count();
+
+            $this->userNotificationService->notifyAllActiveUsers(
+                eventType: 'qc-document.posted',
+                title: 'QC document posted',
+                message: sprintf(
+                    'QC document %s was posted with %d checked item(s)%s.',
+                    $documentNumber,
+                    count($lines),
+                    $failedCount > 0 ? sprintf(', including %d failed or partial result(s)', $failedCount) : ''
+                ),
+                data: [
+                    'qc_document_id' => (int) $qcDocument->id,
+                    'document_number' => $documentNumber,
+                    'total_lines' => count($lines),
+                    'flagged_lines' => $failedCount,
+                ],
+                exceptUserId: $picId,
+                level: $failedCount > 0 ? 'warning' : 'success',
             );
 
             return $qcDocument->fresh('checks.stockItem', 'pic');

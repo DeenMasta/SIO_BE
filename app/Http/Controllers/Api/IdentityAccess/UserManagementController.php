@@ -8,6 +8,7 @@ use App\Application\IdentityAccess\Users\UseCases\DeactivateUserUseCase;
 use App\Application\IdentityAccess\Users\UseCases\ListUsersUseCase;
 use App\Application\IdentityAccess\Users\UseCases\UpdateUserUseCase;
 use App\Application\Support\ApiResponse;
+use App\Application\Support\UserNotificationService;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\IdentityAccess\User\StoreUserRequest;
 use App\Http\Requests\Api\IdentityAccess\User\UpdateUserRequest;
@@ -24,6 +25,7 @@ class UserManagementController extends Controller
         private readonly UpdateUserUseCase $updateUser,
         private readonly ActivateUserUseCase $activateUser,
         private readonly DeactivateUserUseCase $deactivateUser,
+        private readonly UserNotificationService $userNotificationService,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -57,6 +59,19 @@ class UserManagementController extends Controller
 
         $user = $this->createUser->execute($request->validated());
 
+        $this->userNotificationService->notifyUser(
+            userId: (int) $user->id,
+            eventType: 'user.account-created',
+            title: 'Account created',
+            message: 'Your account was created and is ready to use.',
+            data: [
+                'user_id' => (int) $user->id,
+                'status' => $user->status?->value,
+                'role' => $user->role?->value,
+            ],
+            level: 'success',
+        );
+
         return ApiResponse::success(new UserResource($user), 'User created successfully.', 201);
     }
 
@@ -78,6 +93,18 @@ class UserManagementController extends Controller
 
         $updated = $this->activateUser->execute($user);
 
+        $this->userNotificationService->notifyUser(
+            userId: (int) $updated->id,
+            eventType: 'user.account-activated',
+            title: 'Account activated',
+            message: 'Your account is active again.',
+            data: [
+                'user_id' => (int) $updated->id,
+                'status' => $updated->status?->value,
+            ],
+            level: 'success',
+        );
+
         return ApiResponse::success(new UserResource($updated), 'User activated successfully.');
     }
 
@@ -91,6 +118,19 @@ class UserManagementController extends Controller
 
         $updated = $this->deactivateUser->execute($user);
         $user->tokens()->delete();
+
+        $this->userNotificationService->notifyAdmins(
+            eventType: 'user.account-deactivated',
+            title: 'User deactivated',
+            message: sprintf('User %s was deactivated.', $updated->email),
+            data: [
+                'user_id' => (int) $updated->id,
+                'status' => $updated->status?->value,
+                'email' => $updated->email,
+            ],
+            exceptUserId: (int) $this->currentUser()->id,
+            level: 'warning',
+        );
 
         return ApiResponse::success(new UserResource($updated), 'User deactivated successfully.');
     }

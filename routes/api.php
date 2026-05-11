@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\IdentityAccess\UserManagementController;
 use App\Http\Controllers\Api\Inventory\InventoryController;
 use App\Http\Controllers\Api\MasterData\CustomerController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\MasterData\ProductController;
 use App\Http\Controllers\Api\MasterData\SupplierController;
 use App\Http\Controllers\Api\MasterData\PackageController;
@@ -30,6 +31,9 @@ Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:lo
 Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::patch('/notifications/read-all', [NotificationController::class, 'markAllAsRead']);
+    Route::patch('/notifications/{notificationId}/read', [NotificationController::class, 'markAsRead']);
 
     Route::get('/admin/ping', fn () => ApiResponse::success(['alive' => true], 'Admin access granted.'))
         ->middleware('can:access-admin');

@@ -45,6 +45,8 @@ class AuthController extends Controller
             newValues: ['email' => $user->email],
         );
 
+        $user->loadCount('unreadNotifications');
+
         return ApiResponse::success([
             'token_type' => 'Bearer',
             'access_token' => $token,
@@ -68,6 +70,8 @@ class AuthController extends Controller
 
     public function me()
     {
-        return ApiResponse::success(UserResource::make(request()->user()), 'User profile retrieved.');
+        $user = request()->user()?->loadCount('unreadNotifications');
+
+        return ApiResponse::success(UserResource::make($user), 'User profile retrieved.');
     }
 }

@@ -6,6 +6,7 @@ use App\Application\Contracts\UseCase;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\SerialNumberGenerator;
 use App\Application\Support\StockBalanceUpdater;
+use App\Application\Support\UserNotificationService;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\SerialSource;
 use App\Domain\InventoryCore\Enums\StockItemQcStatus;
@@ -30,6 +31,7 @@ class PostStockInUseCase implements UseCase
         private readonly SerialNumberGenerator $serialNumberGenerator,
         private readonly AuditLogger $auditLogger,
         private readonly StockBalanceUpdater $stockBalanceUpdater,
+        private readonly UserNotificationService $userNotificationService,
     )
     {
     }
@@ -182,6 +184,37 @@ class PostStockInUseCase implements UseCase
                 action: AuditAction::Post,
                 newValues: ['stock_in_number' => $result->stock_in_number, 'status' => $result->status?->value],
             );
+
+            $this->userNotificationService->notifyAllActiveUsers(
+                eventType: 'stock-in.posted',
+                title: 'Stock in posted',
+                message: sprintf('Stock in %s was posted.', $result->stock_in_number),
+                data: [
+                    'stock_in_id' => (int) $result->id,
+                    'stock_in_number' => $result->stock_in_number,
+                    'purchase_order_id' => $purchaseOrder?->id,
+                    'purchase_order_status' => $purchaseOrder?->status?->value,
+                ],
+                exceptUserId: (int) $data['stock_in_pic_id'],
+                level: 'success',
+            );
+
+            if ($purchaseOrder !== null && $purchaseOrder->status === PurchaseOrderStatus::Completed) {
+                $this->userNotificationService->notifyAllActiveUsers(
+                    eventType: 'purchase-order.status-changed',
+                    title: 'Purchase order completed',
+                    message: sprintf('Purchase order %s is now COMPLETED.', $purchaseOrder->po_number),
+                    data: [
+                        'purchase_order_id' => (int) $purchaseOrder->id,
+                        'po_number' => $purchaseOrder->po_number,
+                        'status' => $purchaseOrder->status->value,
+                        'transition' => 'auto-complete',
+                        'trigger_stock_in_id' => (int) $result->id,
+                    ],
+                    exceptUserId: (int) $data['stock_in_pic_id'],
+                    level: 'success',
+                );
+            }
 
             return $result;
         });

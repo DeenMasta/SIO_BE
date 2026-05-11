@@ -10,14 +10,24 @@ class EloquentSaleOrderRepository implements SaleOrderRepository
 {
     public function paginate(int $perPage = 15, array $filters = []): LengthAwarePaginator
     {
-        $query = SaleOrder::query()->with('lines.product');
+        $query = SaleOrder::query()->with(['customer', 'lines.product']);
 
         if (!empty($filters['status'])) {
             $query->where('status', $filters['status']);
         }
-        
+
         if (!empty($filters['customer_id'])) {
             $query->where('customer_id', $filters['customer_id']);
+        }
+
+        $search = trim((string) ($filters['q'] ?? ''));
+        if ($search !== '') {
+            $query->where(function ($searchQuery) use ($search): void {
+                $searchQuery->where('so_number', 'like', '%'.$search.'%')
+                    ->orWhereHas('customer', function ($customerQuery) use ($search): void {
+                        $customerQuery->where('customer_name', 'like', '%'.$search.'%');
+                    });
+            });
         }
 
         return $query->latest('id')->paginate($perPage);

@@ -219,4 +219,54 @@ class SalesOutboundApiTest extends TestCase
         $this->assertStringContainsString('Export Customer', $content);
         $this->assertStringContainsString('100.00', $content);
     }
+
+    public function test_sale_order_index_returns_customer_name_and_supports_search_by_customer_name_or_so_number(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $matchingCustomer = Customer::factory()->create([
+            'customer_name' => 'Acme Industries',
+        ]);
+        $otherCustomer = Customer::factory()->create([
+            'customer_name' => 'Other Customer',
+        ]);
+        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->postJson('/api/sale-orders', [
+            'so_number' => 'SO-SEARCH-001',
+            'so_date' => now()->toDateString(),
+            'customer_id' => $matchingCustomer->id,
+            'invoice_number' => 'INV-SEARCH-001',
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 1,
+                'unit_price' => 10,
+            ]],
+        ])->assertCreated();
+
+        $this->postJson('/api/sale-orders', [
+            'so_number' => 'SO-OTHER-002',
+            'so_date' => now()->toDateString(),
+            'customer_id' => $otherCustomer->id,
+            'invoice_number' => 'INV-OTHER-002',
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 1,
+                'unit_price' => 10,
+            ]],
+        ])->assertCreated();
+
+        $this->getJson('/api/sale-orders?q=Acme')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.customer_name', 'Acme Industries')
+            ->assertJsonPath('data.0.so_number', 'SO-SEARCH-001');
+
+        $this->getJson('/api/sale-orders?q=SO-SEARCH-001')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.customer_name', 'Acme Industries')
+            ->assertJsonPath('data.0.so_number', 'SO-SEARCH-001');
+    }
 }
