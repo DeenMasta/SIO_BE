@@ -35,4 +35,13 @@ return [
         ],
     ],
 
+    'telegram' => [
+        'bot_token' => env('TELEGRAM_BOT_TOKEN'),
+        'webhook_secret' => env('TELEGRAM_WEBHOOK_SECRET'),
+        'allowed_chat_ids' => env('TELEGRAM_ALLOWED_CHAT_IDS', ''),
+        'storage_disk' => env('TELEGRAM_STORAGE_DISK', 'local'),
+        'invoice_payload_retention_days' => (int) env('TELEGRAM_INVOICE_PAYLOAD_RETENTION_DAYS', 180),
+        'invoice_webhook_url' => env('TELEGRAM_INVOICE_WEBHOOK_URL'),
+    ],
+
 ];

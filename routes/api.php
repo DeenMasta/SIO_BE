@@ -4,6 +4,8 @@ use App\Application\Support\ApiResponse;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\IdentityAccess\UserManagementController;
 use App\Http\Controllers\Api\Inventory\InventoryController;
+use App\Http\Controllers\Api\Integrations\InvoiceInboxController;
+use App\Http\Controllers\Api\Integrations\TelegramInvoiceWebhookController;
 use App\Http\Controllers\Api\MasterData\CustomerController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\MasterData\ProductController;
@@ -27,6 +29,7 @@ use App\Http\Controllers\Api\QcOutbound\StockOutController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
+Route::post('/integrations/telegram/invoices/webhook', [TelegramInvoiceWebhookController::class, 'handle']);
 
 Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
@@ -90,6 +93,15 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::get('serials', [SearchController::class, 'serials']);
         Route::get('invoices', [SearchController::class, 'invoices']);
         Route::get('purchase-orders', [SearchController::class, 'purchaseOrders']);
+    });
+
+    Route::middleware('can:access-staff')->prefix('invoice-inbox')->group(function () {
+        Route::get('/', [InvoiceInboxController::class, 'index']);
+        Route::get('{invoiceInboxItem}', [InvoiceInboxController::class, 'show']);
+        Route::patch('{invoiceInboxItem}/review', [InvoiceInboxController::class, 'updateReview']);
+        Route::patch('{invoiceInboxItem}/link-sale-order', [InvoiceInboxController::class, 'linkSaleOrder']);
+        Route::patch('{invoiceInboxItem}/link-stock-out', [InvoiceInboxController::class, 'linkStockOut']);
+        Route::patch('{invoiceInboxItem}/retry-match', [InvoiceInboxController::class, 'retryMatch']);
     });
 
     Route::get('dashboard/summary', [DashboardController::class, 'index'])->middleware('can:access-staff');
