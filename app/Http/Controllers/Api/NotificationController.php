@@ -61,6 +61,19 @@ class NotificationController extends Controller
         );
     }
 
+    public function clearAll(Request $request): JsonResponse
+    {
+        $this->currentUser($request)
+            ->notifications()
+            ->delete();
+
+        return ApiResponse::success(
+            null,
+            'All notifications cleared successfully.',
+            meta: ['unread_count' => 0],
+        );
+    }
+
     private function currentUser(Request $request): User
     {
         /** @var User $user */

@@ -36,6 +36,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::patch('/notifications/read-all', [NotificationController::class, 'markAllAsRead']);
+    Route::delete('/notifications', [NotificationController::class, 'clearAll']);
     Route::patch('/notifications/{notificationId}/read', [NotificationController::class, 'markAsRead']);
 
     Route::get('/admin/ping', fn () => ApiResponse::success(['alive' => true], 'Admin access granted.'))

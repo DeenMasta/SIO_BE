@@ -47,6 +47,22 @@ class NotificationApiTest extends TestCase
         $this->patchJson('/api/notifications/read-all')
             ->assertOk()
             ->assertJsonPath('meta.unread_count', 0);
+
+        $user->notify(new SystemNotification([
+            'event_type' => 'test.event.clear',
+            'title' => 'Clear me',
+            'message' => 'This notification should be deleted.',
+            'level' => 'info',
+            'data' => [],
+        ]));
+
+        $this->assertSame(2, $user->fresh()->notifications()->count());
+
+        $this->deleteJson('/api/notifications')
+            ->assertOk()
+            ->assertJsonPath('meta.unread_count', 0);
+
+        $this->assertSame(0, $user->fresh()->notifications()->count());
     }
 
     public function test_stock_in_notifies_other_active_users_only(): void
