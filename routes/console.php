@@ -80,3 +80,6 @@ Artisan::command('telegram-invoices:register-webhook', function () {
 })->purpose('Register the Telegram invoice webhook using the configured bot token and URL.');
 
 Schedule::command('telegram-invoices:prune-raw-payloads')->daily();
+Schedule::command('queue:work --stop-when-empty --tries=3 --timeout=60')
+    ->everyMinute()
+    ->withoutOverlapping();
