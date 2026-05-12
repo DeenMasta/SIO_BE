@@ -6,6 +6,7 @@ use App\Models\InvoiceInboxItem;
 use App\Models\SaleOrder;
 use App\Models\StockOut;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 class TelegramInvoiceMatcher
 {
@@ -126,6 +127,10 @@ class TelegramInvoiceMatcher
      */
     private function matchStockOutsByInvoiceNumber(string $invoiceNumber): Collection
     {
+        if (! Schema::hasColumn('stock_out', 'invoice_number')) {
+            return collect();
+        }
+
         return StockOut::query()
             ->whereRaw('UPPER(invoice_number) = ?', [strtoupper($invoiceNumber)])
             ->get();
@@ -133,11 +138,13 @@ class TelegramInvoiceMatcher
 
     private function findStockOutForSaleOrder(int $saleOrderId, string $invoiceNumber): ?StockOut
     {
-        return StockOut::query()
-            ->where('sale_order_id', $saleOrderId)
-            ->whereRaw('UPPER(invoice_number) = ?', [strtoupper($invoiceNumber)])
-            ->orderByDesc('id')
-            ->first();
+        $query = StockOut::query()->where('sale_order_id', $saleOrderId);
+
+        if (Schema::hasColumn('stock_out', 'invoice_number')) {
+            $query->whereRaw('UPPER(invoice_number) = ?', [strtoupper($invoiceNumber)]);
+        }
+
+        return $query->orderByDesc('id')->first();
     }
 
     private function buildSearchText(InvoiceInboxItem $item): string
