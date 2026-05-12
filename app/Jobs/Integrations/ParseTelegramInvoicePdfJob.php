@@ -4,6 +4,7 @@ namespace App\Jobs\Integrations;
 
 use App\Application\Support\UserNotificationService;
 use App\Models\InvoiceInboxItem;
+use App\Services\Integrations\Telegram\TelegramInvoiceCustomerSync;
 use App\Services\Integrations\Telegram\TelegramInvoicePdfParser;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -22,6 +23,7 @@ class ParseTelegramInvoicePdfJob implements ShouldQueue
 
     public function handle(
         TelegramInvoicePdfParser $parser,
+        TelegramInvoiceCustomerSync $customerSync,
         UserNotificationService $notifications,
     ): void {
         $item = InvoiceInboxItem::query()
@@ -62,6 +64,8 @@ class ParseTelegramInvoicePdfJob implements ShouldQueue
                 'matched_stock_out_id' => null,
                 'matched_at' => null,
             ])->save();
+
+            $customerSync->syncFromParsedName($result['customer_name']);
 
             MatchTelegramInvoiceJob::dispatch($item->id);
 

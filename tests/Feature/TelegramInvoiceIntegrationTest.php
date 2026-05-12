@@ -121,6 +121,7 @@ class TelegramInvoiceIntegrationTest extends TestCase
 
         (new ParseTelegramInvoicePdfJob($item->id))->handle(
             app(TelegramInvoicePdfParser::class),
+            app(\App\Services\Integrations\Telegram\TelegramInvoiceCustomerSync::class),
             app(\App\Application\Support\UserNotificationService::class),
         );
 
@@ -133,8 +134,60 @@ class TelegramInvoiceIntegrationTest extends TestCase
         $this->assertSame('2026-05-12', $item?->invoice_date?->format('Y-m-d'));
         $this->assertNotEmpty($item?->ocr_text);
         $this->assertSame('unmatched', $item?->match_status);
+        $this->assertDatabaseHas('customers', [
+            'customer_name' => 'ACME SDN BHD',
+        ]);
         $this->assertSame(1, $staff->fresh()->notifications()->count());
         $this->assertSame('telegram-invoice.match-review', $staff->fresh()->notifications()->first()?->data['event_type']);
+    }
+
+    public function test_parsing_does_not_create_duplicate_customer_when_name_already_exists(): void
+    {
+        Storage::fake('local');
+
+        Customer::query()->create([
+            'customer_name' => 'ACME SDN BHD',
+            'remarks' => 'Existing customer',
+        ]);
+
+        $message = TelegramInvoiceMessage::query()->create([
+            'telegram_update_id' => 9007,
+            'telegram_chat_id' => '-10099887766',
+            'telegram_chat_title' => 'Invoices',
+            'telegram_message_id' => 94,
+            'telegram_user_id' => 83,
+            'telegram_username' => 'finance',
+            'caption' => 'Invoice for ACME',
+            'message_date' => now(),
+            'received_at' => now(),
+        ]);
+
+        $pdfPath = 'telegram-invoices/2026/05/invoice-existing-customer.pdf';
+        Storage::disk('local')->put($pdfPath, $this->makePdfContent(
+            "INVOICE\nInvoice No: INV-2026-0002\nInvoice Date: 2026-05-12\nBill To:   Acme   Sdn   Bhd   \n"
+        ));
+
+        $item = InvoiceInboxItem::query()->create([
+            'source' => 'telegram',
+            'telegram_invoice_message_id' => $message->id,
+            'file_disk' => 'local',
+            'file_path' => $pdfPath,
+            'original_file_name' => 'invoice-existing-customer.pdf',
+            'mime_type' => 'application/pdf',
+            'telegram_file_id' => 'file-c',
+            'telegram_file_unique_id' => 'uniq-c',
+            'download_status' => 'downloaded',
+            'parse_status' => 'pending',
+            'readability_status' => 'unknown',
+        ]);
+
+        (new ParseTelegramInvoicePdfJob($item->id))->handle(
+            app(TelegramInvoicePdfParser::class),
+            app(\App\Services\Integrations\Telegram\TelegramInvoiceCustomerSync::class),
+            app(\App\Application\Support\UserNotificationService::class),
+        );
+
+        $this->assertSame(1, Customer::query()->count());
     }
 
     public function test_unreadable_pdf_is_marked_for_review(): void
@@ -174,6 +227,7 @@ class TelegramInvoiceIntegrationTest extends TestCase
         try {
             (new ParseTelegramInvoicePdfJob($item->id))->handle(
                 app(TelegramInvoicePdfParser::class),
+                app(\App\Services\Integrations\Telegram\TelegramInvoiceCustomerSync::class),
                 app(\App\Application\Support\UserNotificationService::class),
             );
         } catch (\Throwable) {
