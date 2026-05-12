@@ -190,6 +190,61 @@ class TelegramInvoiceIntegrationTest extends TestCase
         $this->assertSame(1, Customer::query()->count());
     }
 
+    public function test_parser_prioritizes_bill_to_and_ignores_display_artifact_for_customer_name(): void
+    {
+        Storage::fake('local');
+
+        $message = TelegramInvoiceMessage::query()->create([
+            'telegram_update_id' => 9008,
+            'telegram_chat_id' => '-10099887766',
+            'telegram_chat_title' => 'Invoices',
+            'telegram_message_id' => 95,
+            'telegram_user_id' => 84,
+            'telegram_username' => 'finance',
+            'caption' => 'Invoice for Devaraz',
+            'message_date' => now(),
+            'received_at' => now(),
+        ]);
+
+        $pdfPath = 'telegram-invoices/2026/05/invoice-bill-to-priority.pdf';
+        Storage::disk('local')->put($pdfPath, $this->makePdfContent(
+            "Customer Display)\n".
+            "INVOICE\n".
+            "Invoice No: MYSZ-INV-002373/04/2026\n".
+            "Bill To:\n".
+            "DEVARAZ BOUTIQUE WORLD\n".
+            "Bandar Seremban\n".
+            "Negeri Sembilan\n"
+        ));
+
+        $item = InvoiceInboxItem::query()->create([
+            'source' => 'telegram',
+            'telegram_invoice_message_id' => $message->id,
+            'file_disk' => 'local',
+            'file_path' => $pdfPath,
+            'original_file_name' => 'invoice-bill-to-priority.pdf',
+            'mime_type' => 'application/pdf',
+            'telegram_file_id' => 'file-d',
+            'telegram_file_unique_id' => 'uniq-d',
+            'download_status' => 'downloaded',
+            'parse_status' => 'pending',
+            'readability_status' => 'unknown',
+        ]);
+
+        (new ParseTelegramInvoicePdfJob($item->id))->handle(
+            app(TelegramInvoicePdfParser::class),
+            app(\App\Services\Integrations\Telegram\TelegramInvoiceCustomerSync::class),
+            app(\App\Application\Support\UserNotificationService::class),
+        );
+
+        $item = $item->fresh();
+
+        $this->assertSame('DEVARAZ BOUTIQUE WORLD', $item?->customer_name);
+        $this->assertDatabaseHas('customers', [
+            'customer_name' => 'DEVARAZ BOUTIQUE WORLD',
+        ]);
+    }
+
     public function test_unreadable_pdf_is_marked_for_review(): void
     {
         Storage::fake('local');

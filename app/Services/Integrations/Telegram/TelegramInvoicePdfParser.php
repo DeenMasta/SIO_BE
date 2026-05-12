@@ -204,23 +204,49 @@ class TelegramInvoicePdfParser
 
     private function extractCustomerName(string $text): ?string
     {
-        $patterns = [
+        $labelPatterns = [
+            '/bill\s*to\s*[:\-]?\s*\n*([^\n]{3,120})/iu',
+            '/sold\s*to\s*[:\-]?\s*\n*([^\n]{3,120})/iu',
             '/customer\s*(?:name)?\s*[:\-]?\s*([^\n]{3,120})/iu',
-            '/bill\s*to\s*[:\-]?\s*([^\n]{3,120})/iu',
-            '/sold\s*to\s*[:\-]?\s*([^\n]{3,120})/iu',
         ];
 
-        foreach ($patterns as $pattern) {
-            if (preg_match($pattern, $text, $matches) === 1) {
-                $value = trim((string) ($matches[1] ?? ''));
-                $value = trim($value, " \t\n\r\0\x0B:;,.#");
+        foreach ($labelPatterns as $pattern) {
+            if (preg_match($pattern, $text, $matches) !== 1) {
+                continue;
+            }
 
-                if ($value !== '') {
-                    return mb_substr($value, 0, 255);
-                }
+            $value = $this->sanitizeCustomerNameCandidate((string) ($matches[1] ?? ''));
+
+            if ($value !== null) {
+                return $value;
             }
         }
 
         return null;
+    }
+
+    private function sanitizeCustomerNameCandidate(string $value): ?string
+    {
+        $value = trim($value);
+        $value = trim($value, " \t\n\r\0\x0B:;,.#");
+        $value = preg_replace('/\s+/u', ' ', $value) ?? $value;
+
+        if ($value === '') {
+            return null;
+        }
+
+        if (preg_match('/^(invoice|date|due|sale agent|display\b)/iu', $value) === 1) {
+            return null;
+        }
+
+        if (preg_match('/^[^A-Z0-9]*display\)?[^A-Z0-9]*$/iu', $value) === 1) {
+            return null;
+        }
+
+        if (preg_match('/[A-Z]/iu', $value) !== 1) {
+            return null;
+        }
+
+        return mb_substr($value, 0, 255);
     }
 }
