@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Customer;
+use App\Models\Package;
 use App\Models\Product;
 use App\Models\SaleOrder;
 use App\Models\Supplier;
@@ -23,6 +24,7 @@ class MasterDataApiTest extends TestCase
     public function test_staff_can_view_products_but_cannot_create_product(): void
     {
         Product::factory()->count(2)->create();
+        $product = Product::factory()->create();
         $supplier = Supplier::factory()->create();
         $staff = User::factory()->staff()->create();
         Sanctum::actingAs($staff, ['staff-access']);
@@ -30,7 +32,11 @@ class MasterDataApiTest extends TestCase
         $this->getJson('/api/products')
             ->assertOk()
             ->assertJsonPath('status', 'success')
-            ->assertJsonCount(2, 'data');
+            ->assertJsonCount(3, 'data');
+
+        $this->getJson('/api/products/'.$product->id)
+            ->assertOk()
+            ->assertJsonPath('data.id', $product->id);
 
         $this->postJson('/api/products', [
             'product_code' => 'PRD-0001',
@@ -43,6 +49,12 @@ class MasterDataApiTest extends TestCase
             'reorder_level' => 5,
             'status' => 'ACTIVE',
         ])->assertForbidden();
+
+        $this->patchJson('/api/products/'.$product->id, [
+            'product_name' => 'Blocked Product Update',
+        ])->assertForbidden();
+
+        $this->deleteJson('/api/products/'.$product->id)->assertForbidden();
     }
 
     public function test_staff_can_search_products_across_full_dataset_with_server_side_pagination(): void
@@ -287,6 +299,56 @@ class MasterDataApiTest extends TestCase
 
         $this->getJson('/api/suppliers/'.$supplier->id)->assertOk();
         $this->getJson('/api/customers/'.$customer->id)->assertOk();
+    }
+
+    public function test_staff_has_view_only_access_across_master_data_submodules(): void
+    {
+        $staff = User::factory()->staff()->create();
+        $supplier = Supplier::factory()->create();
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create([
+            'supplier_id' => $supplier->id,
+        ]);
+        $package = Package::query()->create([
+            'package_code' => 'PKG-STARTER-001',
+            'package_name' => 'Starter Bundle',
+            'status' => 'ACTIVE',
+            'created_by' => User::factory()->admin()->create()->id,
+        ]);
+        $package->products()->attach($product->id, ['quantity' => 1]);
+
+        Sanctum::actingAs($staff, ['staff-access']);
+
+        $this->getJson('/api/products/'.$product->id)->assertOk();
+        $this->getJson('/api/suppliers/'.$supplier->id)->assertOk();
+        $this->getJson('/api/customers/'.$customer->id)->assertOk();
+        $this->getJson('/api/packages/'.$package->id)->assertOk();
+
+        $this->patchJson('/api/products/'.$product->id, [
+            'product_name' => 'Blocked Product Update',
+        ])->assertForbidden();
+
+        $this->postJson('/api/suppliers', [
+            'supplier_code' => 'SUP-STAFF-001',
+            'supplier_name' => 'Blocked Supplier Create',
+            'status' => 'ACTIVE',
+        ])->assertForbidden();
+
+        $this->patchJson('/api/customers/'.$customer->id, [
+            'customer_name' => 'Blocked Customer Update',
+        ])->assertForbidden();
+
+        $this->postJson('/api/packages', [
+            'package_code' => 'PKG-BLOCKED-001',
+            'package_name' => 'Blocked Package Create',
+            'status' => 'ACTIVE',
+            'products' => [
+                [
+                    'product_id' => $product->id,
+                    'quantity' => 1,
+                ],
+            ],
+        ])->assertForbidden();
     }
 
     public function test_customer_detail_includes_invoice_history_from_sale_orders(): void

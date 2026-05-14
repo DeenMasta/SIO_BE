@@ -17,6 +17,7 @@ class SalesOutboundApiTest extends TestCase
     public function test_admin_can_create_sale_order_with_free_line(): void
     {
         $admin = User::factory()->admin()->create();
+        $staff = User::factory()->staff()->create();
         $customer = Customer::factory()->create();
         $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
 
@@ -51,11 +52,14 @@ class SalesOutboundApiTest extends TestCase
             'unit_price' => 0,
             'subtotal' => 0,
         ]);
+        $this->assertSame(0, $admin->fresh()->unreadNotifications()->count());
+        $this->assertSame('sale-order.created', $staff->fresh()->notifications()->first()?->data['event_type']);
     }
 
     public function test_sale_order_update_replaces_lines_and_keeps_free_line_zero_priced(): void
     {
         $admin = User::factory()->admin()->create();
+        $staff = User::factory()->staff()->create();
         $customer = Customer::factory()->create();
         $productOne = Product::factory()->create(['product_type' => 'CONSUMABLE']);
         $productTwo = Product::factory()->create(['product_type' => 'CONSUMABLE']);
@@ -112,6 +116,43 @@ class SalesOutboundApiTest extends TestCase
             'sale_order_id' => $saleOrderId,
             'product_id' => $productOne->id,
         ]);
+        $this->assertContains(
+            'sale-order.updated',
+            $staff->fresh()->notifications()->get()->pluck('data.event_type')->all(),
+        );
+    }
+
+    public function test_sale_order_delete_notifies_other_active_users(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $staff = User::factory()->staff()->create();
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $created = $this->postJson('/api/sale-orders', [
+            'so_number' => 'SO-DELETE-001',
+            'so_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'invoice_number' => 'INV-SO-DELETE-001',
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 1,
+                'unit_price' => 10,
+            ]],
+        ])->assertCreated();
+
+        $saleOrderId = (int) $created->json('data.id');
+
+        $this->deleteJson('/api/sale-orders/'.$saleOrderId)->assertOk();
+
+        $this->assertDatabaseMissing('sale_orders', ['id' => $saleOrderId]);
+        $this->assertSame(0, $admin->fresh()->unreadNotifications()->count());
+        $this->assertContains(
+            'sale-order.deleted',
+            $staff->fresh()->notifications()->get()->pluck('data.event_type')->all(),
+        );
     }
 
     public function test_free_sale_order_line_can_be_fulfilled_through_stock_out(): void
@@ -183,6 +224,105 @@ class SalesOutboundApiTest extends TestCase
             'id' => $saleOrderLineId,
             'fulfilled_qty' => 2,
             'is_free' => 1,
+        ]);
+    }
+
+    public function test_fulfilled_sale_order_allows_header_updates_but_rejects_line_changes(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create([
+            'product_code' => 'FULFILLED-EDIT-1001',
+            'product_type' => 'CONSUMABLE',
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        StockMovement::query()->create([
+            'movement_datetime' => now(),
+            'product_id' => $product->id,
+            'stock_item_id' => null,
+            'movement_type' => 'STOCK_IN',
+            'reference_table' => 'test_seed',
+            'reference_id' => 1002,
+            'qty_in' => 2,
+            'qty_out' => 0,
+            'to_status' => 'IN_STOCK',
+            'performed_by' => $admin->id,
+        ]);
+
+        $saleOrder = $this->postJson('/api/sale-orders', [
+            'so_number' => 'SO-FULFILLED-EDIT-001',
+            'so_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'invoice_number' => 'INV-FULFILLED-EDIT-001',
+            'remarks' => 'Before update',
+            'lines' => [
+                [
+                    'product_id' => $product->id,
+                    'ordered_qty' => 2,
+                    'unit_price' => 10,
+                ],
+            ],
+        ])->assertCreated();
+
+        $saleOrderId = (int) $saleOrder->json('data.id');
+        $saleOrderLineId = (int) $saleOrder->json('data.lines.0.id');
+
+        $this->patchJson('/api/sale-orders/'.$saleOrderId.'/confirm')
+            ->assertOk()
+            ->assertJsonPath('data.status', 'CONFIRMED');
+
+        $this->postJson('/api/stock-outs', [
+            'sale_order_id' => $saleOrderId,
+            'stock_out_number' => 'SOUT-FULFILLED-EDIT-001',
+            'idempotency_key' => 'idem-fulfilled-edit-001',
+            'stock_out_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'lines' => [
+                [
+                    'product_id' => $product->id,
+                    'sale_order_line_id' => $saleOrderLineId,
+                    'qty' => 2,
+                ],
+            ],
+        ])->assertCreated();
+
+        $this->patchJson('/api/sale-orders/'.$saleOrderId, [
+            'so_date' => now()->addDay()->toDateString(),
+            'customer_id' => $customer->id,
+            'invoice_number' => 'INV-FULFILLED-EDIT-UPDATED',
+            'remarks' => 'After update',
+        ])->assertOk()
+            ->assertJsonPath('data.status', 'FULFILLED')
+            ->assertJsonPath('data.invoice_number', 'INV-FULFILLED-EDIT-UPDATED')
+            ->assertJsonPath('data.remarks', 'After update');
+
+        $this->assertDatabaseHas('sale_orders', [
+            'id' => $saleOrderId,
+            'status' => 'FULFILLED',
+            'invoice_number' => 'INV-FULFILLED-EDIT-UPDATED',
+            'remarks' => 'After update',
+        ]);
+
+        $this->patchJson('/api/sale-orders/'.$saleOrderId, [
+            'so_date' => now()->addDays(2)->toDateString(),
+            'customer_id' => $customer->id,
+            'invoice_number' => 'INV-FULFILLED-EDIT-UPDATED',
+            'lines' => [
+                [
+                    'product_id' => $product->id,
+                    'ordered_qty' => 3,
+                    'unit_price' => 10,
+                ],
+            ],
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['lines']);
+
+        $this->assertDatabaseHas('sale_order_lines', [
+            'id' => $saleOrderLineId,
+            'ordered_qty' => 2,
+            'fulfilled_qty' => 2,
         ]);
     }
 

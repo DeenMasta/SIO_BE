@@ -187,7 +187,7 @@ class TelegramInvoiceIntegrationTest extends TestCase
             app(\App\Application\Support\UserNotificationService::class),
         );
 
-        $this->assertSame(1, Customer::query()->count());
+        $this->assertSame(1, Customer::query()->count('*'));
     }
 
     public function test_parser_prioritizes_bill_to_and_ignores_display_artifact_for_customer_name(): void

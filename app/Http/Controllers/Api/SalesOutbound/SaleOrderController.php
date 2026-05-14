@@ -70,13 +70,27 @@ class SaleOrderController extends Controller
         $this->authorize('create', SaleOrder::class);
 
         $payload = $request->validated();
-        $payload['created_by'] = (int) $request->user()->id;
+        $userId = (int) $request->user()->id;
+        $payload['created_by'] = $userId;
         $payload['status'] = $payload['status'] ?? SaleOrderStatus::Draft;
         $payload['so_number'] = trim((string) ($payload['so_number'] ?? '')) !== ''
             ? trim((string) $payload['so_number'])
             : $this->documentNumberGenerator->generateSaleOrderNumber();
 
         $saleOrder = $this->createSaleOrder->execute($payload);
+
+        $this->userNotificationService->notifyAllActiveUsers(
+            eventType: 'sale-order.created',
+            title: 'Sales order created',
+            message: sprintf('Sales order %s was created.', $saleOrder->so_number),
+            data: [
+                'sale_order_id' => (int) $saleOrder->id,
+                'so_number' => $saleOrder->so_number,
+                'status' => $saleOrder->status?->value,
+            ],
+            exceptUserId: $userId,
+            level: 'info',
+        );
 
         return ApiResponse::success(new SaleOrderResource($saleOrder), 'Sales order created successfully.', 201);
     }
@@ -97,8 +111,22 @@ class SaleOrderController extends Controller
 
         $payload = $request->validated();
         $payload['id'] = $saleOrder->id;
+        $userId = (int) $request->user()->id;
 
         $updated = $this->updateSaleOrder->execute($payload);
+
+        $this->userNotificationService->notifyAllActiveUsers(
+            eventType: 'sale-order.updated',
+            title: 'Sales order updated',
+            message: sprintf('Sales order %s was updated.', $updated->so_number),
+            data: [
+                'sale_order_id' => (int) $updated->id,
+                'so_number' => $updated->so_number,
+                'status' => $updated->status?->value,
+            ],
+            exceptUserId: $userId,
+            level: 'info',
+        );
 
         return ApiResponse::success(new SaleOrderResource($updated->load('lines.product')), 'Sales order updated successfully.');
     }
@@ -107,7 +135,25 @@ class SaleOrderController extends Controller
     {
         $this->authorize('create', SaleOrder::class);
 
+        $userId = (int) request()->user()->id;
+        $saleOrderId = (int) $saleOrder->id;
+        $soNumber = $saleOrder->so_number;
+        $status = $saleOrder->status?->value;
+
         $this->deleteSaleOrder->execute($saleOrder->id);
+
+        $this->userNotificationService->notifyAllActiveUsers(
+            eventType: 'sale-order.deleted',
+            title: 'Sales order deleted',
+            message: sprintf('Sales order %s was deleted.', $soNumber),
+            data: [
+                'sale_order_id' => $saleOrderId,
+                'so_number' => $soNumber,
+                'status' => $status,
+            ],
+            exceptUserId: $userId,
+            level: 'warning',
+        );
 
         return ApiResponse::success(null, 'Sales order deleted successfully.');
     }

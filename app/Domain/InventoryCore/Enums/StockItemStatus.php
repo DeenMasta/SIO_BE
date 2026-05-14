@@ -6,6 +6,7 @@ enum StockItemStatus: string
 {
     case Received = 'RECEIVED';
     case InStock = 'IN_STOCK';
+    case InternalUse = 'INTERNAL_USE';
     case Delivered = 'DELIVERED';
     case UnderRepair = 'UNDER_REPAIR';
     case ReturnedToSupplier = 'RETURNED_TO_SUPPLIER';

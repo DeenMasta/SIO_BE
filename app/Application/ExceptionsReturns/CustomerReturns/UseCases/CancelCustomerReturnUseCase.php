@@ -4,7 +4,9 @@ namespace App\Application\ExceptionsReturns\CustomerReturns\UseCases;
 
 use App\Application\Contracts\Repositories\CustomerReturnRepository;
 use App\Application\Contracts\UseCase;
+use App\Application\Inventory\LowStockAlertService;
 use App\Application\Support\AuditLogger;
+use App\Application\Support\StockBalanceUpdater;
 use App\Application\Support\UserNotificationService;
 use App\Domain\ExceptionsReturns\Enums\CustomerReturnNextAction;
 use App\Domain\ExceptionsReturns\Enums\ExceptionTransactionStatus;
@@ -22,6 +24,8 @@ class CancelCustomerReturnUseCase implements UseCase
     public function __construct(
         private readonly CustomerReturnRepository $returns,
         private readonly AuditLogger $auditLogger,
+        private readonly StockBalanceUpdater $stockBalanceUpdater,
+        private readonly LowStockAlertService $lowStockAlertService,
         private readonly UserNotificationService $userNotificationService,
     ) {
     }
@@ -38,6 +42,13 @@ class CancelCustomerReturnUseCase implements UseCase
                     'status' => ['Only POSTED customer return transactions can be cancelled.'],
                 ]);
             }
+
+            $affectedProductIds = $return->lines
+                ->pluck('product_id')
+                ->unique()
+                ->values()
+                ->all();
+            $beforeLowStockSnapshot = $this->lowStockAlertService->snapshotForProducts($affectedProductIds);
 
             foreach ($return->lines as $line) {
                 $fromStatus = $this->targetStatusForNextAction((string) $line->next_action);
@@ -89,6 +100,13 @@ class CancelCustomerReturnUseCase implements UseCase
             $return->status = ExceptionTransactionStatus::Cancelled;
             $return->remarks = $data['remarks'] ?? $return->remarks;
             $return->save();
+
+            $this->stockBalanceUpdater->recomputeForProducts($affectedProductIds);
+            $this->lowStockAlertService->notifyStatusTransitions(
+                $beforeLowStockSnapshot,
+                $affectedProductIds,
+                (int) $data['cancelled_by'],
+            );
 
             $this->auditLogger->log(
                 userId: (int) $data['cancelled_by'],

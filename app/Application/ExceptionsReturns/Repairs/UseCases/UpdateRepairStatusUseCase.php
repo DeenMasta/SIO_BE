@@ -4,7 +4,9 @@ namespace App\Application\ExceptionsReturns\Repairs\UseCases;
 
 use App\Application\Contracts\Repositories\RepairRepository;
 use App\Application\Contracts\UseCase;
+use App\Application\Inventory\LowStockAlertService;
 use App\Application\Support\AuditLogger;
+use App\Application\Support\StockBalanceUpdater;
 use App\Application\Support\UserNotificationService;
 use App\Domain\ExceptionsReturns\Enums\RepairFlow;
 use App\Domain\ExceptionsReturns\Enums\RepairStatus;
@@ -23,6 +25,8 @@ class UpdateRepairStatusUseCase implements UseCase
     public function __construct(
         private readonly RepairRepository $repairs,
         private readonly AuditLogger $auditLogger,
+        private readonly StockBalanceUpdater $stockBalanceUpdater,
+        private readonly LowStockAlertService $lowStockAlertService,
         private readonly UserNotificationService $userNotificationService,
     )
     {
@@ -36,6 +40,9 @@ class UpdateRepairStatusUseCase implements UseCase
         $status = RepairStatus::from((string) $data['repair_status']);
 
         return DB::transaction(function () use ($repair, $status, $data): Repair {
+            $stockItem = StockItem::query()->findOrFail((int) $repair->stock_item_id);
+            $affectedProductIds = [(int) $stockItem->product_id];
+            $beforeLowStockSnapshot = $this->lowStockAlertService->snapshotForProducts($affectedProductIds);
             RepairStateMachine::validateTransition($repair->repair_flow, $repair->repair_status, $status);
             $this->validateStatusPayload($repair->repair_flow, $status, $data);
 
@@ -68,6 +75,13 @@ class UpdateRepairStatusUseCase implements UseCase
             } elseif ($status === RepairStatus::Cancelled) {
                 $this->handleCancellation($repair, $data);
             }
+
+            $this->stockBalanceUpdater->recomputeForProducts($affectedProductIds);
+            $this->lowStockAlertService->notifyStatusTransitions(
+                $beforeLowStockSnapshot,
+                $affectedProductIds,
+                (int) $data['updated_by'],
+            );
 
             $this->auditLogger->log(
                 userId: (int) $data['updated_by'],

@@ -18,6 +18,12 @@ final class InventoryStockQuery
             ->where('qc_status', 'PASSED')
             ->groupBy('product_id');
 
+        $nonSerializedAvailable = DB::table('stock_movements')
+            ->selectRaw('product_id')
+            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'IN_STOCK' THEN qty_in ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'IN_STOCK' THEN qty_out ELSE 0 END), 0) as qty_available_non_serialized")
+            ->whereNull('stock_item_id')
+            ->groupBy('product_id');
+
         $availableQty = $this->availableQtyExpression();
 
         return Product::query()
@@ -26,6 +32,9 @@ final class InventoryStockQuery
             ->leftJoin('stock_balances as sb', 'sb.product_id', '=', 'p.id')
             ->leftJoinSub($serializedAvailable, 'sa', function ($join): void {
                 $join->on('sa.product_id', '=', 'p.id');
+            })
+            ->leftJoinSub($nonSerializedAvailable, 'ns', function ($join): void {
+                $join->on('ns.product_id', '=', 'p.id');
             })
             ->select([
                 'p.id as product_id',
@@ -42,6 +51,7 @@ final class InventoryStockQuery
                 'p.status',
                 DB::raw('COALESCE(sb.qty_in_stock, 0) as qty_in_stock'),
                 DB::raw('COALESCE(sb.qty_delivered, 0) as qty_delivered'),
+                DB::raw('COALESCE(sb.qty_internal_use, 0) as qty_internal_use'),
                 DB::raw('COALESCE(sb.qty_under_repair, 0) as qty_under_repair'),
                 DB::raw('COALESCE(sb.qty_returned, 0) as qty_returned'),
                 DB::raw('COALESCE(sb.qty_returned_to_supplier, 0) as qty_returned_to_supplier'),
@@ -93,7 +103,7 @@ final class InventoryStockQuery
 
     private function availableQtyExpression(): string
     {
-        return "CASE WHEN p.requires_serial_number = 1 THEN COALESCE(sa.qty_available_serialized, 0) ELSE COALESCE(sb.qty_in_stock, 0) END";
+        return "CASE WHEN p.requires_serial_number = 1 THEN COALESCE(sa.qty_available_serialized, 0) ELSE CASE WHEN ns.qty_available_non_serialized IS NULL THEN COALESCE(sb.qty_in_stock, 0) WHEN ns.qty_available_non_serialized < 0 THEN 0 ELSE ns.qty_available_non_serialized END END";
     }
 
     private function stockStatusExpression(): string

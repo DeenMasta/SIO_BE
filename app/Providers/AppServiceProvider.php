@@ -17,6 +17,8 @@ use App\Application\Contracts\Repositories\UserRepository;
 use App\Domain\IdentityAccess\Enums\UserRole;
 use App\Models\Customer;
 use App\Models\CustomerReturn;
+use App\Models\InternalStockMovement;
+use App\Models\Package;
 use App\Models\PurchaseOrder;
 use App\Models\Product;
 use App\Models\QcCheck;
@@ -29,6 +31,8 @@ use App\Models\Supplier;
 use App\Models\User;
 use App\Policies\CustomerPolicy;
 use App\Policies\CustomerReturnPolicy;
+use App\Policies\InternalStockMovementPolicy;
+use App\Policies\PackagePolicy;
 use App\Policies\PurchaseOrderPolicy;
 use App\Policies\ProductPolicy;
 use App\Policies\QcCheckPolicy;
@@ -99,6 +103,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Product::class, ProductPolicy::class);
         Gate::policy(Supplier::class, SupplierPolicy::class);
         Gate::policy(Customer::class, CustomerPolicy::class);
+        Gate::policy(Package::class, PackagePolicy::class);
         Gate::policy(PurchaseOrder::class, PurchaseOrderPolicy::class);
         Gate::policy(SaleOrder::class, SaleOrderPolicy::class);
         Gate::policy(StockIn::class, StockInPolicy::class);
@@ -107,5 +112,6 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(QcCheck::class, QcCheckPolicy::class);
         Gate::policy(ReturnToSupplier::class, ReturnToSupplierPolicy::class);
         Gate::policy(CustomerReturn::class, CustomerReturnPolicy::class);
+        Gate::policy(InternalStockMovement::class, InternalStockMovementPolicy::class);
     }
 }

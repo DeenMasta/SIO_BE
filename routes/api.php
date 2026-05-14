@@ -4,6 +4,7 @@ use App\Application\Support\ApiResponse;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\IdentityAccess\UserManagementController;
 use App\Http\Controllers\Api\Inventory\InventoryController;
+use App\Http\Controllers\Api\Inventory\InternalStockMovementController;
 use App\Http\Controllers\Api\Integrations\InvoiceInboxController;
 use App\Http\Controllers\Api\Integrations\TelegramInvoiceWebhookController;
 use App\Http\Controllers\Api\MasterData\CustomerController;
@@ -57,6 +58,11 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::apiResource('inventories', InventoryController::class)
         ->only(['index', 'show'])
         ->parameters(['inventories' => 'product'])
+        ->middleware('can:access-staff');
+    Route::apiResource('internal-stock-movements', InternalStockMovementController::class)
+        ->only(['index', 'store', 'show'])
+        ->middleware('can:access-staff');
+    Route::patch('internal-stock-movements/{id}/return', [InternalStockMovementController::class, 'returnToStock'])
         ->middleware('can:access-staff');
 
     Route::get('purchase-orders/export', [PurchaseOrderController::class, 'export']);

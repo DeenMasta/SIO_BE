@@ -84,6 +84,19 @@ class UserManagementController extends Controller
             ...$request->validated(),
         ]);
 
+        $this->userNotificationService->notifyUser(
+            userId: (int) $updated->id,
+            eventType: 'user.account-updated',
+            title: 'Account updated',
+            message: 'Your account details were updated.',
+            data: [
+                'user_id' => (int) $updated->id,
+                'status' => $updated->status?->value,
+                'role' => $updated->role?->value,
+            ],
+            level: 'info',
+        );
+
         return ApiResponse::success(new UserResource($updated), 'User updated successfully.');
     }
 

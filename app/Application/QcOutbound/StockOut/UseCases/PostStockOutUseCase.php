@@ -4,6 +4,7 @@ namespace App\Application\QcOutbound\StockOut\UseCases;
 
 use App\Application\Contracts\Repositories\StockOutRepository;
 use App\Application\Contracts\UseCase;
+use App\Application\Inventory\LowStockAlertService;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\StockBalanceUpdater;
 use App\Application\Support\UserNotificationService;
@@ -31,6 +32,7 @@ class PostStockOutUseCase implements UseCase
         private readonly StockOutRepository $stockOuts,
         private readonly AuditLogger $auditLogger,
         private readonly StockBalanceUpdater $stockBalanceUpdater,
+        private readonly LowStockAlertService $lowStockAlertService,
         private readonly UserNotificationService $userNotificationService,
     )
     {
@@ -62,7 +64,11 @@ class PostStockOutUseCase implements UseCase
 
         try {
             return DB::transaction(function () use ($data): array {
-                $affectedProductIds = [];
+                $affectedProductIds = collect((array) ($data['lines'] ?? []))
+                    ->pluck('product_id')
+                    ->filter()
+                    ->all();
+                $beforeLowStockSnapshot = $this->lowStockAlertService->snapshotForProducts($affectedProductIds);
                 $usedStockItemIds = [];
                 $saleOrder = null;
                 if (!empty($data['sale_order_id'])) {
@@ -99,7 +105,6 @@ class PostStockOutUseCase implements UseCase
 
             foreach ($data['lines'] as $line) {
                 $product = Product::query()->findOrFail((int) $line['product_id']);
-                $affectedProductIds[] = (int) $product->id;
                 $qty = (int) $line['qty'];
                 $saleOrderLineId = $line['sale_order_line_id'] ?? null;
 
@@ -261,6 +266,11 @@ class PostStockOutUseCase implements UseCase
                 }
 
                 $this->stockBalanceUpdater->recomputeForProducts($affectedProductIds);
+                $this->lowStockAlertService->notifyStatusTransitions(
+                    $beforeLowStockSnapshot,
+                    $affectedProductIds,
+                    (int) $data['pic_id'],
+                );
 
                 $result = [
                     'stock_out' => $stockOut->fresh('lines.lineItems', 'saleOrder'),

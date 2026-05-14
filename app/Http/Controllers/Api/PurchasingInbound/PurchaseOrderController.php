@@ -66,13 +66,27 @@ class PurchaseOrderController extends Controller
         $this->authorize('create', PurchaseOrder::class);
 
         $payload = $request->validated();
-        $payload['created_by'] = (int) $request->user()->id;
+        $userId = (int) $request->user()->id;
+        $payload['created_by'] = $userId;
         $payload['status'] = $payload['status'] ?? PurchaseOrderStatus::Draft;
         $payload['po_number'] = trim((string) ($payload['po_number'] ?? '')) !== ''
             ? trim((string) $payload['po_number'])
             : $this->documentNumberGenerator->generatePurchaseOrderNumber();
 
         $purchaseOrder = $this->createPurchaseOrder->execute($payload);
+
+        $this->userNotificationService->notifyAllActiveUsers(
+            eventType: 'purchase-order.created',
+            title: 'Purchase order created',
+            message: sprintf('Purchase order %s was created.', $purchaseOrder->po_number),
+            data: [
+                'purchase_order_id' => (int) $purchaseOrder->id,
+                'po_number' => $purchaseOrder->po_number,
+                'status' => $purchaseOrder->status?->value,
+            ],
+            exceptUserId: $userId,
+            level: 'info',
+        );
 
         return ApiResponse::success(new PurchaseOrderResource($purchaseOrder), 'Purchase order created successfully.', 201);
     }
@@ -90,8 +104,22 @@ class PurchaseOrderController extends Controller
 
         $payload = $request->validated();
         $payload['id'] = $purchaseOrder->id;
+        $userId = (int) $request->user()->id;
 
         $updated = $this->updatePurchaseOrder->execute($payload);
+
+        $this->userNotificationService->notifyAllActiveUsers(
+            eventType: 'purchase-order.updated',
+            title: 'Purchase order updated',
+            message: sprintf('Purchase order %s was updated.', $updated->po_number),
+            data: [
+                'purchase_order_id' => (int) $updated->id,
+                'po_number' => $updated->po_number,
+                'status' => $updated->status?->value,
+            ],
+            exceptUserId: $userId,
+            level: 'info',
+        );
 
         return ApiResponse::success(new PurchaseOrderResource($updated->load('lines.product')), 'Purchase order updated successfully.');
     }
@@ -100,7 +128,25 @@ class PurchaseOrderController extends Controller
     {
         $this->authorize('delete', $purchaseOrder);
 
+        $userId = (int) request()->user()->id;
+        $purchaseOrderId = (int) $purchaseOrder->id;
+        $poNumber = $purchaseOrder->po_number;
+        $status = $purchaseOrder->status?->value;
+
         $this->deletePurchaseOrder->execute($purchaseOrder->id);
+
+        $this->userNotificationService->notifyAllActiveUsers(
+            eventType: 'purchase-order.deleted',
+            title: 'Purchase order deleted',
+            message: sprintf('Purchase order %s was deleted.', $poNumber),
+            data: [
+                'purchase_order_id' => $purchaseOrderId,
+                'po_number' => $poNumber,
+                'status' => $status,
+            ],
+            exceptUserId: $userId,
+            level: 'warning',
+        );
 
         return ApiResponse::success(null, 'Purchase order deleted successfully.');
     }

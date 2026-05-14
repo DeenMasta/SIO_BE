@@ -20,6 +20,7 @@ class PurchasingInboundApiTest extends TestCase
     public function test_admin_can_create_purchase_order_with_lines(): void
     {
         $admin = User::factory()->admin()->create();
+        $staff = User::factory()->staff()->create();
         $supplier = Supplier::factory()->create();
         $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
 
@@ -43,6 +44,9 @@ class PurchasingInboundApiTest extends TestCase
             ->assertJsonPath('data.lines.0.ordered_qty', 10)
             ->assertJsonPath('data.lines.0.received_qty', 0)
             ->assertJsonPath('data.lines.0.subtotal', '55.00');
+
+        $this->assertSame(0, $admin->fresh()->unreadNotifications()->count());
+        $this->assertSame('purchase-order.created', $staff->fresh()->notifications()->first()?->data['event_type']);
     }
 
     public function test_staff_can_create_purchase_order_and_post_stock_in(): void
@@ -127,6 +131,7 @@ class PurchasingInboundApiTest extends TestCase
     public function test_purchase_order_update_replaces_lines_when_draft(): void
     {
         $admin = User::factory()->admin()->create();
+        $staff = User::factory()->staff()->create();
         $supplier = Supplier::factory()->create();
         $productOne = Product::factory()->create(['product_type' => 'CONSUMABLE']);
         $productTwo = Product::factory()->create(['product_type' => 'CONSUMABLE']);
@@ -177,6 +182,42 @@ class PurchasingInboundApiTest extends TestCase
             'product_id' => $productTwo->id,
             'ordered_qty' => 5,
         ]);
+        $this->assertContains(
+            'purchase-order.updated',
+            $staff->fresh()->notifications()->get()->pluck('data.event_type')->all(),
+        );
+    }
+
+    public function test_purchase_order_delete_notifies_other_active_users(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $staff = User::factory()->staff()->create();
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $po = $this->postJson('/api/purchase-orders', [
+            'po_number' => 'PO-DELETE-001',
+            'po_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 1,
+                'unit_price' => 10,
+            ]],
+        ])->assertCreated();
+
+        $poId = (int) $po->json('data.id');
+
+        $this->deleteJson('/api/purchase-orders/'.$poId)->assertOk();
+
+        $this->assertDatabaseMissing('purchase_orders', ['id' => $poId]);
+        $this->assertSame(0, $admin->fresh()->unreadNotifications()->count());
+        $this->assertContains(
+            'purchase-order.deleted',
+            $staff->fresh()->notifications()->get()->pluck('data.event_type')->all(),
+        );
     }
 
     public function test_purchase_order_update_rejects_non_draft_orders(): void
@@ -588,6 +629,101 @@ class PurchasingInboundApiTest extends TestCase
         $this->assertStringContainsString('SIN-EXPORT-001', $content);
         $this->assertStringContainsString('Stock In Export Supplier', $content);
         $this->assertStringContainsString('7', $content);
+    }
+
+    public function test_legacy_qc_post_with_empty_lines_notifies_other_active_users(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $staff = User::factory()->staff()->create();
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $stockIn = $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-QC-LEGACY-001',
+            'stock_in_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'received_qty' => 1,
+            ]],
+        ])->assertCreated();
+
+        $this->postJson('/api/qc-transactions', [
+            'qc_reference_number' => 'QC-LEGACY-001',
+            'stock_in_id' => (int) $stockIn->json('data.id'),
+            'qc_date' => now()->toDateString(),
+            'lines' => [],
+        ])->assertCreated();
+
+        $this->assertSame(0, $admin->fresh()->unreadNotifications()->count());
+        $this->assertContains(
+            'qc-document.posted',
+            $staff->fresh()->notifications()->get()->pluck('data.event_type')->all(),
+        );
+    }
+
+    public function test_qc_document_update_notifies_other_active_users(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $staff = User::factory()->staff()->create();
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'product_type' => 'DEVICE',
+            'requires_serial_number' => true,
+        ]);
+        $product->conditions()->create([
+            'condition_name' => 'Screen OK',
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $stockIn = $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-QC-UPD-001',
+            'stock_in_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'received_qty' => 1,
+                'serial_numbers' => ['QC-UPD-0001'],
+            ]],
+        ])->assertCreated();
+
+        $stockItemId = (int) StockItem::query()->value('id');
+
+        $qcDocument = $this->postJson('/api/qc-documents', [
+            'document_number' => 'QC-UPD-001',
+            'stock_in_id' => (int) $stockIn->json('data.id'),
+            'date' => now()->toDateString(),
+            'lines' => [[
+                'stock_item_id' => $stockItemId,
+                'result' => 'FAILED',
+                'checked_conditions' => [],
+                'checked_accessories' => [],
+                'remarks' => 'Initial fail',
+            ]],
+        ])->assertCreated();
+
+        $checkId = (int) $qcDocument->json('data.lines.0.id');
+
+        $this->patchJson('/api/qc-documents/'.$qcDocument->json('data.id'), [
+            'date' => now()->addDay()->toDateString(),
+            'remarks' => 'Updated after re-check',
+            'lines' => [[
+                'id' => $checkId,
+                'checked_conditions' => ['Screen OK'],
+                'checked_accessories' => [],
+                'remarks' => 'Passed on second inspection',
+            ]],
+        ])->assertOk();
+
+        $this->assertContains(
+            'qc-document.updated',
+            $staff->fresh()->notifications()->get()->pluck('data.event_type')->all(),
+        );
     }
 
     public function test_qc_document_export_returns_filtered_csv(): void

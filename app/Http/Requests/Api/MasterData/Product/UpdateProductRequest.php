@@ -13,7 +13,10 @@ class UpdateProductRequest extends StrictFormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        /** @var Product|null $product */
+        $product = $this->route('product');
+
+        return $product !== null && ($this->user()?->can('update', $product) ?? false);
     }
 
     /**

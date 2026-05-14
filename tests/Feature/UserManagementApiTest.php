@@ -59,6 +59,18 @@ class UserManagementApiTest extends TestCase
             'id' => $target->id,
             'status' => 'inactive',
         ]);
+        $this->assertContains(
+            'user.account-created',
+            User::query()->findOrFail($createdId)->notifications()->get()->pluck('data.event_type')->all(),
+        );
+        $this->assertContains(
+            'user.account-updated',
+            User::query()->findOrFail($createdId)->notifications()->get()->pluck('data.event_type')->all(),
+        );
+        $this->assertContains(
+            'user.account-activated',
+            $target->fresh()->notifications()->get()->pluck('data.event_type')->all(),
+        );
     }
 
     public function test_staff_is_forbidden_from_admin_user_management_endpoints(): void

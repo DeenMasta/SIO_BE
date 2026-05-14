@@ -4,6 +4,7 @@ namespace App\Application\ExceptionsReturns\ReturnToSuppliers\UseCases;
 
 use App\Application\Contracts\Repositories\ReturnToSupplierRepository;
 use App\Application\Contracts\UseCase;
+use App\Application\Inventory\LowStockAlertService;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\StockBalanceUpdater;
 use App\Application\Support\UserNotificationService;
@@ -25,6 +26,7 @@ class CreateReturnToSupplierUseCase implements UseCase
         private readonly ReturnToSupplierRepository $returns,
         private readonly AuditLogger $auditLogger,
         private readonly StockBalanceUpdater $stockBalanceUpdater,
+        private readonly LowStockAlertService $lowStockAlertService,
         private readonly UserNotificationService $userNotificationService,
     ) {
     }
@@ -54,11 +56,14 @@ class CreateReturnToSupplierUseCase implements UseCase
                 'created_by' => $data['created_by'],
             ]);
 
-            $affectedProductIds = [];
+            $affectedProductIds = collect((array) ($data['lines'] ?? []))
+                ->pluck('product_id')
+                ->filter()
+                ->all();
+            $beforeLowStockSnapshot = $this->lowStockAlertService->snapshotForProducts($affectedProductIds);
 
             foreach ($data['lines'] as $index => $line) {
                 $stockInLine = $this->resolveStockInLine($stockIn, $line, $index);
-                $affectedProductIds[] = (int) $stockInLine->product_id;
 
                 $lineModel = $return->lines()->create([
                     'product_id' => $line['product_id'],
@@ -78,6 +83,11 @@ class CreateReturnToSupplierUseCase implements UseCase
             }
 
             $this->stockBalanceUpdater->recomputeForProducts($affectedProductIds);
+            $this->lowStockAlertService->notifyStatusTransitions(
+                $beforeLowStockSnapshot,
+                $affectedProductIds,
+                (int) $data['created_by'],
+            );
 
             $result = $return->fresh([
                 'supplier',

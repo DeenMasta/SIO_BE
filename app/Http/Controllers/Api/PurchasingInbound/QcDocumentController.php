@@ -7,6 +7,7 @@ use App\Application\PurchasingInbound\StockIn\UseCases\PostQcDocumentUseCase;
 use App\Application\Support\ApiResponse;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\DocumentNumberGenerator;
+use App\Application\Support\UserNotificationService;
 use App\Application\ReportingAudit\Reports\Services\ExportService;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemQcStatus;
@@ -36,6 +37,7 @@ class QcDocumentController extends Controller
         private readonly DocumentNumberGenerator $documentNumberGenerator,
         private readonly AuditLogger $auditLogger,
         private readonly ExportService $exportService,
+        private readonly UserNotificationService $userNotificationService,
     ) {
     }
 
@@ -77,7 +79,8 @@ class QcDocumentController extends Controller
     public function storeLegacy(Request $request): JsonResponse
     {
         $payload = $this->normalizeLegacyPayload($request);
-        $payload['pic_id'] = (int) $request->user()->id;
+        $performedBy = (int) $request->user()->id;
+        $payload['pic_id'] = $performedBy;
         $payload['document_number'] = trim((string) ($payload['document_number'] ?? '')) !== ''
             ? trim((string) $payload['document_number'])
             : $this->documentNumberGenerator->generateQcDocumentNumber();
@@ -93,7 +96,7 @@ class QcDocumentController extends Controller
             ]);
 
             $this->auditLogger->log(
-                userId: (int) $request->user()->id,
+                userId: $performedBy,
                 moduleName: 'PurchasingInbound',
                 entityName: 'QcDocument',
                 entityId: (int) $qcDocument->id,
@@ -103,6 +106,21 @@ class QcDocumentController extends Controller
                     'legacy_payload' => true,
                     'total_lines' => 0,
                 ],
+            );
+
+            $this->userNotificationService->notifyAllActiveUsers(
+                eventType: 'qc-document.posted',
+                title: 'QC document posted',
+                message: sprintf('QC document %s was posted with %d checked item(s).', $qcDocument->document_number, 0),
+                data: [
+                    'qc_document_id' => (int) $qcDocument->id,
+                    'document_number' => $qcDocument->document_number,
+                    'total_lines' => 0,
+                    'flagged_lines' => 0,
+                    'legacy_payload' => true,
+                ],
+                exceptUserId: $performedBy,
+                level: 'success',
             );
 
             return ApiResponse::success(
@@ -320,6 +338,32 @@ class QcDocumentController extends Controller
         $updatedDocument = QcDocument::query()
             ->with(['checks.stockItem.product', 'pic'])
             ->findOrFail($document->id);
+
+        $flaggedCount = $updatedDocument->checks
+            ->filter(fn (QcCheck $check): bool => in_array($check->result?->value ?? (string) $check->result, [
+                StockItemQcStatus::Failed->value,
+                StockItemQcStatus::Partial->value,
+            ], true))
+            ->count();
+
+        $this->userNotificationService->notifyAllActiveUsers(
+            eventType: 'qc-document.updated',
+            title: 'QC document updated',
+            message: sprintf(
+                'QC document %s was updated with %d checked item(s)%s.',
+                $updatedDocument->document_number,
+                $updatedDocument->checks->count(),
+                $flaggedCount > 0 ? sprintf(', including %d failed or partial result(s)', $flaggedCount) : ''
+            ),
+            data: [
+                'qc_document_id' => (int) $updatedDocument->id,
+                'document_number' => $updatedDocument->document_number,
+                'total_lines' => $updatedDocument->checks->count(),
+                'flagged_lines' => $flaggedCount,
+            ],
+            exceptUserId: $performedBy,
+            level: $flaggedCount > 0 ? 'warning' : 'info',
+        );
 
         return ApiResponse::success(new QcDocumentResource($updatedDocument), 'QC Document updated successfully.');
     }

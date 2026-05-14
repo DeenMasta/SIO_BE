@@ -8,6 +8,8 @@ enum MovementType: string
     case QcPass = 'QC_PASS';
     case QcFail = 'QC_FAIL';
     case StockOut = 'STOCK_OUT';
+    case InternalUseOut = 'INTERNAL_USE_OUT';
+    case InternalUseReturn = 'INTERNAL_USE_RETURN';
     case RepairIn = 'REPAIR_IN';
     case RepairOut = 'REPAIR_OUT';
     case RepairReturnToCustomer = 'REPAIR_RETURN_TO_CUSTOMER';

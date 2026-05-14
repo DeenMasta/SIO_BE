@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\AuditLog;
 use App\Models\Product;
+use App\Models\StockIn;
+use App\Models\StockInLine;
 use App\Models\StockItem;
 use App\Models\Supplier;
 use App\Models\User;
@@ -136,6 +138,64 @@ class ReportingAuditApiTest extends TestCase
             ->assertJsonPath('data.recent_movements.1.document_type', 'Stock In')
             ->assertJsonMissingPath('data.recent_movements.0.reference_id')
             ->assertJsonMissingPath('data.recent_movements.0.reference_table');
+    }
+
+    public function test_low_stock_report_and_dashboard_use_available_serialized_stock_only(): void
+    {
+        $staff = User::factory()->staff()->create();
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'product_code' => 'PROD-LOW-UNAVAIL',
+            'product_name' => 'Unavailable Serial Device',
+            'product_type' => 'DEVICE',
+            'requires_serial_number' => true,
+            'supplier_id' => $supplier->id,
+            'reorder_level' => 2,
+        ]);
+
+        $stockIn = StockIn::query()->create([
+            'stock_in_number' => 'SIN-RPT-LOW-0001',
+            'stock_in_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'stock_in_pic_id' => $staff->id,
+            'status' => 'POSTED',
+        ]);
+
+        $stockInLine = StockInLine::query()->create([
+            'stock_in_id' => $stockIn->id,
+            'product_id' => $product->id,
+            'received_qty' => 1,
+        ]);
+
+        StockItem::query()->create([
+            'product_id' => $product->id,
+            'stock_in_line_id' => $stockInLine->id,
+            'serial_number' => 'SER-LOW-UNAVAIL-0001',
+            'serial_source' => 'FACTORY',
+            'current_status' => 'IN_STOCK',
+            'qc_status' => 'FAILED',
+            'is_available' => false,
+            'received_condition' => 'NEW',
+            'last_movement_at' => now(),
+        ]);
+
+        Sanctum::actingAs($staff, ['staff-access']);
+
+        $this->getJson('/api/reports/inventory?stock_status=out_of_stock')
+            ->assertOk()
+            ->assertJsonPath('data.0.product_code', 'PROD-LOW-UNAVAIL')
+            ->assertJsonPath('data.0.qty_available', 0)
+            ->assertJsonPath('data.0.stock_status', 'out_of_stock')
+            ->assertJsonPath('meta.summary.low_stock_products', 0)
+            ->assertJsonPath('meta.summary.out_of_stock_products', 1);
+
+        $this->getJson('/api/reports/low-stock')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        $this->getJson('/api/dashboard/summary')
+            ->assertOk()
+            ->assertJsonPath('data.low_stock_count', 0);
     }
 
     public function test_staff_cannot_view_audit_logs_but_admin_can(): void

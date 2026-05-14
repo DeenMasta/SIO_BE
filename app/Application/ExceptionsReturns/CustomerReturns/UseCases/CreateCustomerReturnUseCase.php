@@ -4,7 +4,9 @@ namespace App\Application\ExceptionsReturns\CustomerReturns\UseCases;
 
 use App\Application\Contracts\Repositories\CustomerReturnRepository;
 use App\Application\Contracts\UseCase;
+use App\Application\Inventory\LowStockAlertService;
 use App\Application\Support\AuditLogger;
+use App\Application\Support\StockBalanceUpdater;
 use App\Application\Support\UserNotificationService;
 use App\Domain\ExceptionsReturns\Enums\CustomerReturnNextAction;
 use App\Domain\ExceptionsReturns\Enums\ExceptionTransactionStatus;
@@ -23,6 +25,8 @@ class CreateCustomerReturnUseCase implements UseCase
     public function __construct(
         private readonly CustomerReturnRepository $returns,
         private readonly AuditLogger $auditLogger,
+        private readonly StockBalanceUpdater $stockBalanceUpdater,
+        private readonly LowStockAlertService $lowStockAlertService,
         private readonly UserNotificationService $userNotificationService,
     )
     {
@@ -50,6 +54,12 @@ class CreateCustomerReturnUseCase implements UseCase
                 'remarks' => $data['remarks'] ?? null,
                 'created_by' => $data['created_by'],
             ]);
+
+            $affectedProductIds = collect((array) ($data['lines'] ?? []))
+                ->pluck('product_id')
+                ->filter()
+                ->all();
+            $beforeLowStockSnapshot = $this->lowStockAlertService->snapshotForProducts($affectedProductIds);
 
             foreach ($data['lines'] as $line) {
                 $stockItemId = $line['stock_item_id'] ?? null;
@@ -116,6 +126,13 @@ class CreateCustomerReturnUseCase implements UseCase
                 ]);
 
             }
+
+            $this->stockBalanceUpdater->recomputeForProducts($affectedProductIds);
+            $this->lowStockAlertService->notifyStatusTransitions(
+                $beforeLowStockSnapshot,
+                $affectedProductIds,
+                (int) $data['created_by'],
+            );
 
             $result = $return->fresh('lines');
 

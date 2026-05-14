@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\ReportingAudit;
 
+use App\Application\Inventory\LowStockAlertService;
 use App\Application\Support\ApiResponse;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\ReportingAudit\Report\ReportPackRequest;
@@ -18,6 +19,11 @@ use Illuminate\Support\Facades\DB;
 
 class ReportPackController extends Controller
 {
+    public function __construct(
+        private readonly LowStockAlertService $lowStockAlertService,
+    ) {
+    }
+
     public function stockBalance(ReportPackRequest $request): JsonResponse
     {
         $filters = $request->validated();
@@ -92,38 +98,9 @@ class ReportPackController extends Controller
     {
         $filters = $request->validated();
         $perPage = (int) ($filters['per_page'] ?? 15);
-        $serializedInStockByProduct = DB::table('stock_items')
-            ->selectRaw("product_id, SUM(CASE WHEN current_status = 'IN_STOCK' THEN 1 ELSE 0 END) as serialized_in_stock")
-            ->groupBy('product_id');
-
-        $nonSerializedInStockByProduct = DB::table('stock_movements')
-            ->whereNull('stock_item_id')
-            ->selectRaw("product_id, COALESCE(SUM(CASE WHEN to_status = 'IN_STOCK' THEN qty_in ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'IN_STOCK' THEN qty_out ELSE 0 END), 0) as non_serialized_in_stock")
-            ->groupBy('product_id');
-
-        $query = DB::table('products as p')
-            ->leftJoinSub($serializedInStockByProduct, 'sis', function ($join): void {
-                $join->on('sis.product_id', '=', 'p.id');
-            })
-            ->leftJoinSub($nonSerializedInStockByProduct, 'ns', function ($join): void {
-                $join->on('ns.product_id', '=', 'p.id');
-            })
-            ->select([
-                'p.id as product_id',
-                'p.product_code',
-                'p.product_name',
-                'p.reorder_level',
-                DB::raw("COALESCE(sis.serialized_in_stock, 0) + CASE WHEN COALESCE(ns.non_serialized_in_stock, 0) < 0 THEN 0 ELSE COALESCE(ns.non_serialized_in_stock, 0) END as qty_in_stock"),
-                DB::raw("(p.reorder_level - (COALESCE(sis.serialized_in_stock, 0) + CASE WHEN COALESCE(ns.non_serialized_in_stock, 0) < 0 THEN 0 ELSE COALESCE(ns.non_serialized_in_stock, 0) END)) as shortage_qty"),
-            ])
-            ->where('p.reorder_level', '>', 0)
-            ->whereRaw('COALESCE(sis.serialized_in_stock, 0) + CASE WHEN COALESCE(ns.non_serialized_in_stock, 0) < 0 THEN 0 ELSE COALESCE(ns.non_serialized_in_stock, 0) END < p.reorder_level')
+        $query = $this->lowStockAlertService->lowStockReportQuery($filters)
             ->orderByDesc('shortage_qty')
-            ->orderBy('p.product_code');
-
-        if (! empty($filters['product_id'])) {
-            $query->where('p.id', (int) $filters['product_id']);
-        }
+            ->orderBy('product_code');
 
         $records = $query->paginate($perPage);
 

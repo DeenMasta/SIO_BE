@@ -4,7 +4,9 @@ namespace App\Application\ExceptionsReturns\Repairs\UseCases;
 
 use App\Application\Contracts\Repositories\RepairRepository;
 use App\Application\Contracts\UseCase;
+use App\Application\Inventory\LowStockAlertService;
 use App\Application\Support\AuditLogger;
+use App\Application\Support\StockBalanceUpdater;
 use App\Application\Support\UserNotificationService;
 use App\Domain\ExceptionsReturns\Enums\RepairFlow;
 use App\Domain\ExceptionsReturns\Enums\RepairStatus;
@@ -23,6 +25,8 @@ class CreateRepairUseCase implements UseCase
     public function __construct(
         private readonly RepairRepository $repairs,
         private readonly AuditLogger $auditLogger,
+        private readonly StockBalanceUpdater $stockBalanceUpdater,
+        private readonly LowStockAlertService $lowStockAlertService,
         private readonly UserNotificationService $userNotificationService,
     )
     {
@@ -34,6 +38,8 @@ class CreateRepairUseCase implements UseCase
 
         return DB::transaction(function () use ($data): Repair {
             $stockItem = StockItem::query()->lockForUpdate()->findOrFail((int) $data['stock_item_id']);
+            $affectedProductIds = [(int) $stockItem->product_id];
+            $beforeLowStockSnapshot = $this->lowStockAlertService->snapshotForProducts($affectedProductIds);
             $repairFlow = RepairFlow::from((string) $data['repair_flow']);
 
             $customerId = $this->resolveCustomerId($stockItem, $repairFlow, $data);
@@ -74,6 +80,13 @@ class CreateRepairUseCase implements UseCase
                 'performed_by' => (int) $data['created_by'],
                 'remarks' => $data['remarks'] ?? null,
             ]);
+
+            $this->stockBalanceUpdater->recomputeForProducts($affectedProductIds);
+            $this->lowStockAlertService->notifyStatusTransitions(
+                $beforeLowStockSnapshot,
+                $affectedProductIds,
+                (int) $data['created_by'],
+            );
 
             $this->auditLogger->log(
                 userId: (int) $data['created_by'],

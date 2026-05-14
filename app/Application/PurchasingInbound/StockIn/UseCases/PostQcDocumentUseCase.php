@@ -3,7 +3,9 @@
 namespace App\Application\PurchasingInbound\StockIn\UseCases;
 
 use App\Application\Contracts\UseCase;
+use App\Application\Inventory\LowStockAlertService;
 use App\Application\Support\AuditLogger;
+use App\Application\Support\StockBalanceUpdater;
 use App\Application\Support\UserNotificationService;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemQcStatus;
@@ -20,6 +22,8 @@ class PostQcDocumentUseCase implements UseCase
 {
     public function __construct(
         private readonly AuditLogger $auditLogger,
+        private readonly StockBalanceUpdater $stockBalanceUpdater,
+        private readonly LowStockAlertService $lowStockAlertService,
         private readonly UserNotificationService $userNotificationService,
     ) {
     }
@@ -86,6 +90,13 @@ class PostQcDocumentUseCase implements UseCase
                     ]);
                 }
             }
+
+            $affectedProductIds = $stockItemsCollection
+                ->pluck('product_id')
+                ->unique()
+                ->values()
+                ->all();
+            $beforeLowStockSnapshot = $this->lowStockAlertService->snapshotForProducts($affectedProductIds);
 
             // 1. Create QC Document
             $qcDocument = QcDocument::query()->create([
@@ -154,6 +165,13 @@ class PostQcDocumentUseCase implements UseCase
                     'remarks'           => $lineRemarks,
                 ]);
             }
+
+            $this->stockBalanceUpdater->recomputeForProducts($affectedProductIds);
+            $this->lowStockAlertService->notifyStatusTransitions(
+                $beforeLowStockSnapshot,
+                $affectedProductIds,
+                $picId,
+            );
 
             $this->auditLogger->log(
                 userId: $picId,

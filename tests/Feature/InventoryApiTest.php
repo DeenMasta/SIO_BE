@@ -72,6 +72,7 @@ class InventoryApiTest extends TestCase
 
         $this->assertSame(1, $records->firstWhere('product_id', $device->id)['qty_available']);
         $this->assertSame(3, $records->firstWhere('product_id', $device->id)['qty_in_stock']);
+        $this->assertSame(0, $records->firstWhere('product_id', $device->id)['qty_internal_use']);
         $this->assertSame('low_stock', $records->firstWhere('product_id', $device->id)['stock_status']);
 
         $this->assertSame(0, $records->firstWhere('product_id', $emptyProduct->id)['qty_available']);
@@ -118,6 +119,7 @@ class InventoryApiTest extends TestCase
             [
                 'qty_in_stock' => $qtyInStock,
                 'qty_delivered' => 0,
+                'qty_internal_use' => 0,
                 'qty_under_repair' => 0,
                 'qty_returned' => 0,
                 'qty_returned_to_supplier' => 0,

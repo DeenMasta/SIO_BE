@@ -3,6 +3,7 @@
 namespace App\Application\PurchasingInbound\StockIn\UseCases;
 
 use App\Application\Contracts\UseCase;
+use App\Application\Inventory\LowStockAlertService;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\SerialNumberGenerator;
 use App\Application\Support\StockBalanceUpdater;
@@ -31,6 +32,7 @@ class PostStockInUseCase implements UseCase
         private readonly SerialNumberGenerator $serialNumberGenerator,
         private readonly AuditLogger $auditLogger,
         private readonly StockBalanceUpdater $stockBalanceUpdater,
+        private readonly LowStockAlertService $lowStockAlertService,
         private readonly UserNotificationService $userNotificationService,
     )
     {
@@ -42,6 +44,7 @@ class PostStockInUseCase implements UseCase
 
         return DB::transaction(function () use ($data): StockIn {
             $affectedProductIds = [];
+            $beforeLowStockSnapshot = [];
             $purchaseOrderId = $data['purchase_order_id'] ?? null;
             $purchaseOrder = null;
 
@@ -77,7 +80,11 @@ class PostStockInUseCase implements UseCase
             foreach ($data['lines'] as $line) {
                 $purchaseOrderLine = $this->resolvePurchaseOrderLine($purchaseOrder, $line);
                 $product = $purchaseOrderLine?->product ?? Product::query()->findOrFail((int) $line['product_id']);
-                $affectedProductIds[] = (int) $product->id;
+                $productId = (int) $product->id;
+                if (! in_array($productId, $affectedProductIds, true)) {
+                    $affectedProductIds[] = $productId;
+                    $beforeLowStockSnapshot += $this->lowStockAlertService->snapshotForProducts([$productId]);
+                }
                 $receivedQty = (int) $line['received_qty'];
                 $allowGeneratedSerials = (bool) ($line['allow_generated_serials'] ?? false);
                 $unitReceipts = $this->buildUnitReceipts($line, $receivedQty);
@@ -173,6 +180,11 @@ class PostStockInUseCase implements UseCase
             }
 
             $this->stockBalanceUpdater->recomputeForProducts($affectedProductIds);
+            $this->lowStockAlertService->notifyStatusTransitions(
+                $beforeLowStockSnapshot,
+                $affectedProductIds,
+                (int) $data['stock_in_pic_id'],
+            );
 
             $result = $stockIn->fresh('lines.product', 'lines.stockItems');
 

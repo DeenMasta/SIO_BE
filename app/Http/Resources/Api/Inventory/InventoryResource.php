@@ -33,6 +33,7 @@ final class InventoryResource extends JsonResource
             'qty_in_stock' => (int) $this->qty_in_stock,
             'qty_available_serialized' => (int) $this->qty_available_serialized,
             'qty_delivered' => (int) $this->qty_delivered,
+            'qty_internal_use' => (int) $this->qty_internal_use,
             'qty_under_repair' => (int) $this->qty_under_repair,
             'qty_returned' => (int) $this->qty_returned,
             'qty_returned_to_supplier' => (int) $this->qty_returned_to_supplier,

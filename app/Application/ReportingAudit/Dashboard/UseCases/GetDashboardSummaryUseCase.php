@@ -3,6 +3,7 @@
 namespace App\Application\ReportingAudit\Dashboard\UseCases;
 
 use App\Application\Contracts\UseCase;
+use App\Application\Inventory\LowStockAlertService;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
@@ -16,6 +17,11 @@ use Illuminate\Support\Facades\DB;
 
 class GetDashboardSummaryUseCase implements UseCase
 {
+    public function __construct(
+        private readonly LowStockAlertService $lowStockAlertService,
+    ) {
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -40,25 +46,7 @@ class GetDashboardSummaryUseCase implements UseCase
             ->selectRaw("COALESCE(SUM(CASE WHEN from_status = 'IN_STOCK' THEN qty_out ELSE 0 END), 0) as qty_in_stock_out")
             ->first();
 
-        $serializedInStockByProduct = StockItem::query()
-            ->selectRaw('product_id, SUM(CASE WHEN current_status = \'IN_STOCK\' THEN 1 ELSE 0 END) as serialized_in_stock')
-            ->groupBy('product_id');
-
-        $nonSerializedInStockByProduct = StockMovement::query()
-            ->whereNull('stock_item_id')
-            ->selectRaw("product_id, COALESCE(SUM(CASE WHEN to_status = 'IN_STOCK' THEN qty_in ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'IN_STOCK' THEN qty_out ELSE 0 END), 0) as non_serialized_in_stock")
-            ->groupBy('product_id');
-
-        $lowStockCount = Product::query()
-            ->leftJoinSub($serializedInStockByProduct, 'sis', function ($join): void {
-                $join->on('sis.product_id', '=', 'products.id');
-            })
-            ->leftJoinSub($nonSerializedInStockByProduct, 'ns', function ($join): void {
-                $join->on('ns.product_id', '=', 'products.id');
-            })
-            ->where('products.reorder_level', '>', 0)
-            ->whereRaw('COALESCE(sis.serialized_in_stock, 0) + CASE WHEN COALESCE(ns.non_serialized_in_stock, 0) < 0 THEN 0 ELSE COALESCE(ns.non_serialized_in_stock, 0) END < products.reorder_level')
-            ->count();
+        $lowStockCount = $this->lowStockAlertService->lowStockCount();
 
         $openPoCount = PurchaseOrder::query()->whereIn('status', ['DRAFT', 'ISSUED'])->count();
         $overduePoCount = PurchaseOrder::query()

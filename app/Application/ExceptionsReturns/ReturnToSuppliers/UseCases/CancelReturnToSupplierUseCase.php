@@ -4,6 +4,7 @@ namespace App\Application\ExceptionsReturns\ReturnToSuppliers\UseCases;
 
 use App\Application\Contracts\Repositories\ReturnToSupplierRepository;
 use App\Application\Contracts\UseCase;
+use App\Application\Inventory\LowStockAlertService;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\StockBalanceUpdater;
 use App\Application\Support\UserNotificationService;
@@ -23,6 +24,7 @@ class CancelReturnToSupplierUseCase implements UseCase
         private readonly ReturnToSupplierRepository $returns,
         private readonly AuditLogger $auditLogger,
         private readonly StockBalanceUpdater $stockBalanceUpdater,
+        private readonly LowStockAlertService $lowStockAlertService,
         private readonly UserNotificationService $userNotificationService,
     ) {
     }
@@ -40,11 +42,14 @@ class CancelReturnToSupplierUseCase implements UseCase
                 ]);
             }
 
-            $affectedProductIds = [];
+            $affectedProductIds = $return->lines
+                ->pluck('product_id')
+                ->unique()
+                ->values()
+                ->all();
+            $beforeLowStockSnapshot = $this->lowStockAlertService->snapshotForProducts($affectedProductIds);
 
             foreach ($return->lines as $line) {
-                $affectedProductIds[] = (int) $line->product_id;
-
                 $originalMovement = StockMovement::query()
                     ->where('reference_table', 'return_to_supplier_lines')
                     ->where('reference_id', (int) $line->id)
@@ -105,6 +110,11 @@ class CancelReturnToSupplierUseCase implements UseCase
             $return->save();
 
             $this->stockBalanceUpdater->recomputeForProducts($affectedProductIds);
+            $this->lowStockAlertService->notifyStatusTransitions(
+                $beforeLowStockSnapshot,
+                $affectedProductIds,
+                (int) $data['cancelled_by'],
+            );
 
             $this->auditLogger->log(
                 userId: (int) $data['cancelled_by'],

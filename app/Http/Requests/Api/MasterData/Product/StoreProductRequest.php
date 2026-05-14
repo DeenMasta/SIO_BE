@@ -12,7 +12,7 @@ class StoreProductRequest extends StrictFormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->can('create', \App\Models\Product::class) ?? false;
     }
 
     /**
