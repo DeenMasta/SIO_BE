@@ -15,5 +15,10 @@ interface SaleOrderRepository
 
     public function update(SaleOrder $so, array $data): SaleOrder;
 
+    /**
+     * @param  array<int, array<string, mixed>>  $lines
+     */
+    public function appendLines(SaleOrder $so, array $lines): SaleOrder;
+
     public function delete(SaleOrder $so): void;
 }

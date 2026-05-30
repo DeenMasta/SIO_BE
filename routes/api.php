@@ -75,6 +75,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::apiResource('sale-orders', SaleOrderController::class)->only(['index', 'store', 'show', 'update', 'destroy']);
     Route::patch('sale-orders/{saleOrder}/confirm', [SaleOrderController::class, 'confirm']);
     Route::patch('sale-orders/{saleOrder}/cancel', [SaleOrderController::class, 'cancel']);
+    Route::post('sale-orders/{saleOrder}/addon-lines', [SaleOrderController::class, 'addAddonLines']);
 
     Route::get('stock-ins/{stockIn}/pending-qc-items', [StockInController::class, 'pendingQcItems']);
     Route::get('stock-ins/export', [StockInController::class, 'export']);

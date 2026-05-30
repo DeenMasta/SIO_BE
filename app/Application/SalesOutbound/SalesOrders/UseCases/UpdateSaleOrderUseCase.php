@@ -21,15 +21,15 @@ class UpdateSaleOrderUseCase implements UseCase
 
         $saleOrder = $this->saleOrders->findOrFail($id);
 
-        if (! in_array($saleOrder->status, [SaleOrderStatus::Draft, SaleOrderStatus::Fulfilled], true)) {
+        if (! in_array($saleOrder->status, [SaleOrderStatus::Draft, SaleOrderStatus::Confirmed, SaleOrderStatus::Fulfilled], true)) {
             throw ValidationException::withMessages([
-                'status' => ['Only DRAFT or FULFILLED sales orders can be updated.'],
+                'status' => ['Only DRAFT, CONFIRMED, or FULFILLED sales orders can be updated.'],
             ]);
         }
 
-        if ($saleOrder->status === SaleOrderStatus::Fulfilled && array_key_exists('lines', $data)) {
+        if (in_array($saleOrder->status, [SaleOrderStatus::Confirmed, SaleOrderStatus::Fulfilled], true) && array_key_exists('lines', $data)) {
             throw ValidationException::withMessages([
-                'lines' => ['FULFILLED sales orders only allow header updates. Line items cannot be changed after fulfillment.'],
+                'lines' => ['Only DRAFT sales orders allow full line item editing. Use addon-lines for CONFIRMED or FULFILLED orders.'],
             ]);
         }
 

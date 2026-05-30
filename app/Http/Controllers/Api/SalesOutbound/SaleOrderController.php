@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\SalesOutbound;
 
+use App\Application\Contracts\Repositories\SaleOrderRepository;
 use App\Application\SalesOutbound\SalesOrders\UseCases\CreateSaleOrderUseCase;
 use App\Application\SalesOutbound\SalesOrders\UseCases\DeleteSaleOrderUseCase;
 use App\Application\SalesOutbound\SalesOrders\UseCases\ListSaleOrdersUseCase;
@@ -16,6 +17,7 @@ use App\Domain\SalesOutbound\Enums\SaleOrderStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\SalesOutbound\SaleOrder\ExportSaleOrderRequest;
 use App\Http\Requests\Api\SalesOutbound\SaleOrder\StoreSaleOrderRequest;
+use App\Http\Requests\Api\SalesOutbound\SaleOrder\StoreAddonLinesRequest;
 use App\Http\Requests\Api\SalesOutbound\SaleOrder\UpdateSaleOrderRequest;
 use App\Http\Resources\Api\SalesOutbound\SaleOrderResource;
 use App\Models\SaleOrder;
@@ -37,6 +39,7 @@ class SaleOrderController extends Controller
         private readonly DocumentNumberGenerator $documentNumberGenerator,
         private readonly ExportService $exportService,
         private readonly UserNotificationService $userNotificationService,
+        private readonly SaleOrderRepository $saleOrderRepository,
     ) {
     }
 
@@ -229,6 +232,56 @@ class SaleOrderController extends Controller
         );
 
         return ApiResponse::success(new SaleOrderResource($updated->load('lines.product')), 'Sales order cancelled successfully.');
+    }
+
+    public function addAddonLines(StoreAddonLinesRequest $request, SaleOrder $saleOrder): JsonResponse
+    {
+        $this->authorize('create', SaleOrder::class);
+
+        if (! in_array($saleOrder->status, [SaleOrderStatus::Confirmed, SaleOrderStatus::Fulfilled], true)) {
+            throw ValidationException::withMessages([
+                'status' => ['Addon lines can only be added to CONFIRMED or FULFILLED sales orders.'],
+            ]);
+        }
+
+        $lines = $request->validated()['lines'];
+        $userId = (int) $request->user()->id;
+        $previousStatus = $saleOrder->status;
+
+        // If FULFILLED, revert to CONFIRMED since new lines need fulfillment
+        if ($saleOrder->status === SaleOrderStatus::Fulfilled) {
+            $saleOrder->status = SaleOrderStatus::Confirmed;
+            $saleOrder->save();
+        }
+
+        $updated = $this->saleOrderRepository->appendLines($saleOrder, $lines);
+        $updated->load(['lines.product', 'lines.dispatchedItems.stockItem']);
+
+        $this->auditLogger->log(
+            userId: $userId,
+            moduleName: 'SalesOutbound',
+            entityName: 'SaleOrder',
+            entityId: (int) $updated->id,
+            action: AuditAction::Update,
+            oldValues: ['status' => $previousStatus->value],
+            newValues: ['status' => $updated->status?->value, 'addon_lines_added' => count($lines)],
+        );
+
+        $this->userNotificationService->notifyAllActiveUsers(
+            eventType: 'sale-order.addon-lines-added',
+            title: 'Addon lines added to sales order',
+            message: sprintf('%d addon line(s) added to sales order %s.', count($lines), $updated->so_number),
+            data: [
+                'sale_order_id' => (int) $updated->id,
+                'so_number' => $updated->so_number,
+                'status' => $updated->status?->value,
+                'lines_added' => count($lines),
+            ],
+            exceptUserId: $userId,
+            level: 'info',
+        );
+
+        return ApiResponse::success(new SaleOrderResource($updated), 'Addon lines added successfully.');
     }
 
     /**

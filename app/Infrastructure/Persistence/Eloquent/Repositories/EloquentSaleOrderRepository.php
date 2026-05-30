@@ -69,6 +69,15 @@ class EloquentSaleOrderRepository implements SaleOrderRepository
         return $so->fresh('lines.product');
     }
 
+    public function appendLines(SaleOrder $so, array $lines): SaleOrder
+    {
+        foreach ($lines as $line) {
+            $so->lines()->create($this->normalizeLine($line));
+        }
+
+        return $so->fresh('lines.product');
+    }
+
     public function delete(SaleOrder $so): void
     {
         $so->delete();
