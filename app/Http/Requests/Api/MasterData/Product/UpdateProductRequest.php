@@ -50,11 +50,36 @@ class UpdateProductRequest extends StrictFormRequest
 
     protected function prepareForValidation(): void
     {
-        if ($this->has('selling_price') && trim((string) $this->input('selling_price')) === '') {
-            $this->merge([
-                'selling_price' => 0,
-            ]);
+        if (! $this->has('selling_price')) {
+            return;
         }
+
+        $this->merge([
+            'selling_price' => $this->normalizeSellingPrice($this->input('selling_price')),
+        ]);
+    }
+
+    private function normalizeSellingPrice(mixed $value): mixed
+    {
+        if (! is_string($value)) {
+            return $value;
+        }
+
+        $normalized = trim($value);
+
+        if ($normalized === '') {
+            return 0;
+        }
+
+        if (str_contains($normalized, ',') && str_contains($normalized, '.')) {
+            return str_replace(',', '', $normalized);
+        }
+
+        if (str_contains($normalized, ',')) {
+            return str_replace(',', '.', $normalized);
+        }
+
+        return $normalized;
     }
 
     protected function allowedFields(): array

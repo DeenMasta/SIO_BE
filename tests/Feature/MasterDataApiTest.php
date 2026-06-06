@@ -211,6 +211,55 @@ class MasterDataApiTest extends TestCase
         ]);
     }
 
+    public function test_admin_can_create_product_with_decimal_price_string(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->postJson('/api/products', [
+            'product_code' => 'PRD-0010',
+            'product_name' => 'Decimal Price Product',
+            'product_model' => 'DEC-10',
+            'product_type' => 'CONSUMABLE',
+            'requires_serial_number' => false,
+            'supplier_id' => $supplier->id,
+            'selling_price' => '450.75',
+            'uom' => 'PCS',
+            'reorder_level' => 1,
+            'status' => 'ACTIVE',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.selling_price', '450.75');
+
+        $this->assertDatabaseHas('products', [
+            'product_code' => 'PRD-0010',
+            'selling_price' => 450.75,
+        ]);
+    }
+
+    public function test_admin_can_update_product_with_decimal_price_string(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'supplier_id' => $supplier->id,
+            'selling_price' => 100,
+        ]);
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->patchJson('/api/products/'.$product->id, [
+            'selling_price' => '125.50',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.selling_price', '125.5');
+
+        $this->assertDatabaseHas('products', [
+            'id' => $product->id,
+            'selling_price' => 125.50,
+        ]);
+    }
+
     public function test_product_create_rejects_unknown_fields_and_duplicate_code(): void
     {
         $admin = User::factory()->admin()->create();
