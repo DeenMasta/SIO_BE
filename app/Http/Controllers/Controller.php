@@ -8,5 +8,3 @@ abstract class Controller
 {
     use AuthorizesRequests;
 }
-
-// mcsslcedkve
