@@ -31,6 +31,7 @@ class ProductController extends Controller
         $products = $this->listProducts->execute([
             'per_page' => (int) $request->integer('per_page', 15),
             'q' => trim((string) $request->query('q', '')),
+            'supplier_id' => $request->query('supplier_id'),
         ]);
 
         return ApiResponse::paginated(
