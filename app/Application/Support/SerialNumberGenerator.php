@@ -25,7 +25,7 @@ class SerialNumberGenerator
             }
 
             $suffix = substr($value, strlen($prefix) + 1);
-            if (strlen($suffix) !== 4 || ! ctype_digit($suffix)) {
+            if (strlen($suffix) !== 3 || ! ctype_digit($suffix)) {
                 continue;
             }
 
@@ -35,7 +35,7 @@ class SerialNumberGenerator
         $nextRunning = $maxRunning + 1;
 
         for ($attempt = 0; $attempt < 100; $attempt++) {
-            $running = str_pad((string) $nextRunning, 4, '0', STR_PAD_LEFT);
+            $running = str_pad((string) $nextRunning, 3, '0', STR_PAD_LEFT);
             $serial = $prefix.'-'.$running;
 
             if (! StockItem::query()->where('serial_number', $serial)->exists()) {
