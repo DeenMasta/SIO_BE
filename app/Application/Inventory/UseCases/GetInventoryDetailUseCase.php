@@ -16,13 +16,15 @@ final class GetInventoryDetailUseCase implements UseCase
     }
 
     /**
-     * @return array{inventory: object, available_serials: LengthAwarePaginator|null}
+     * @return array{inventory: object, serials: LengthAwarePaginator|null}
      */
     public function execute(mixed $payload = null): array
     {
         $filters = is_array($payload) ? $payload : [];
         $productId = (int) ($filters['product_id'] ?? 0);
         $serialPerPage = (int) ($filters['serial_per_page'] ?? 50);
+        $serialSearch = trim((string) ($filters['serial_q'] ?? ''));
+        $serialStatus = trim((string) ($filters['serial_status'] ?? ''));
 
         $inventory = $this->inventoryStockQuery
             ->base()
@@ -31,17 +33,17 @@ final class GetInventoryDetailUseCase implements UseCase
 
         $serials = null;
         if ((bool) $inventory->requires_serial_number) {
-            $serials = $this->availableSerialsQuery($productId, trim((string) ($filters['serial_q'] ?? '')))
+            $serials = $this->serialsQuery($productId, $serialSearch, $serialStatus)
                 ->paginate($serialPerPage > 0 ? $serialPerPage : 50, ['*'], 'serial_page');
         }
 
         return [
             'inventory' => $inventory,
-            'available_serials' => $serials,
+            'serials' => $serials,
         ];
     }
 
-    private function availableSerialsQuery(int $productId, string $search): Builder
+    private function serialsQuery(int $productId, string $search, string $status): Builder
     {
         return StockItem::query()
             ->from('stock_items', 'si')
@@ -61,11 +63,11 @@ final class GetInventoryDetailUseCase implements UseCase
                 DB::raw('sin.stock_in_date'),
             ])
             ->where('si.product_id', $productId)
-            ->where('si.current_status', 'IN_STOCK')
-            ->where('si.is_available', true)
-            ->where('si.qc_status', 'PASSED')
             ->when($search !== '', function (Builder $query) use ($search): void {
                 $query->where('si.serial_number', 'like', '%'.$search.'%');
+            })
+            ->when($status !== '', function (Builder $query) use ($status): void {
+                $query->where('si.current_status', $status);
             })
             ->orderBy('si.serial_number');
     }

@@ -79,7 +79,7 @@ class InventoryApiTest extends TestCase
         $this->assertSame('out_of_stock', $records->firstWhere('product_id', $emptyProduct->id)['stock_status']);
     }
 
-    public function test_staff_can_view_inventory_detail_with_available_serials(): void
+    public function test_staff_can_view_inventory_detail_with_all_registered_serials(): void
     {
         $staff = User::factory()->staff()->create();
         $supplier = Supplier::factory()->create();
@@ -96,6 +96,7 @@ class InventoryApiTest extends TestCase
         $this->upsertStockBalance($device->id, 2);
         $this->createSerializedStock($device, $staff, $supplier, 'SER-AVAILABLE-001', 'PASSED', true);
         $this->createSerializedStock($device, $staff, $supplier, 'SER-FAILED-001', 'FAILED', true);
+        $this->createSerializedStock($device, $staff, $supplier, 'SER-DELIVERED-001', 'PASSED', false, 'DELIVERED');
 
         Sanctum::actingAs($staff, ['staff-access']);
 
@@ -103,8 +104,35 @@ class InventoryApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.inventory.product_id', $device->id)
             ->assertJsonPath('data.inventory.qty_available', 1)
-            ->assertJsonPath('data.available_serials.0.serial_number', 'SER-AVAILABLE-001')
-            ->assertJsonPath('meta.available_serials_pagination.total', 1);
+            ->assertJsonPath('data.serials.0.serial_number', 'SER-AVAILABLE-001')
+            ->assertJsonPath('meta.serials_pagination.total', 3);
+    }
+
+    public function test_staff_can_filter_inventory_detail_serials_by_status(): void
+    {
+        $staff = User::factory()->staff()->create();
+        $supplier = Supplier::factory()->create();
+        $device = Product::factory()->create([
+            'product_code' => 'INV-DEV-FILTER',
+            'product_name' => 'Device Filter',
+            'product_type' => 'DEVICE',
+            'requires_serial_number' => true,
+            'supplier_id' => $supplier->id,
+            'reorder_level' => 1,
+            'status' => 'ACTIVE',
+        ]);
+
+        $this->upsertStockBalance($device->id, 2);
+        $this->createSerializedStock($device, $staff, $supplier, 'SER-IN-STOCK-001', 'PASSED', true, 'IN_STOCK');
+        $this->createSerializedStock($device, $staff, $supplier, 'SER-DELIVERED-001', 'PASSED', false, 'DELIVERED');
+
+        Sanctum::actingAs($staff, ['staff-access']);
+
+        $this->getJson('/api/inventories/'.$device->id.'?serial_status=DELIVERED')
+            ->assertOk()
+            ->assertJsonPath('meta.serials_pagination.total', 1)
+            ->assertJsonPath('data.serials.0.serial_number', 'SER-DELIVERED-001')
+            ->assertJsonPath('data.serials.0.current_status', 'DELIVERED');
     }
 
     public function test_inventory_endpoints_require_authenticated_active_staff_access(): void

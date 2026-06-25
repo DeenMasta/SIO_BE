@@ -38,18 +38,18 @@ final class InventoryController extends Controller
             'product_id' => (int) $product->id,
         ]);
 
-        $serials = $detail['available_serials'];
+        $serials = $detail['serials'];
 
         return ApiResponse::success(
             [
                 'inventory' => new InventoryResource($detail['inventory']),
-                'available_serials' => $serials !== null
+                'serials' => $serials !== null
                     ? InventorySerialResource::collection($serials->items())
                     : [],
             ],
             'Inventory retrieved successfully.',
             meta: $serials !== null ? [
-                'available_serials_pagination' => [
+                'serials_pagination' => [
                     'current_page' => $serials->currentPage(),
                     'per_page' => $serials->perPage(),
                     'total' => $serials->total(),

@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Api\Inventory;
 
+use App\Domain\InventoryCore\Enums\StockItemStatus;
 use App\Http\Requests\Api\StrictFormRequest;
+use Illuminate\Validation\Rule;
 
 final class InventoryQueryRequest extends StrictFormRequest
 {
@@ -26,6 +28,10 @@ final class InventoryQueryRequest extends StrictFormRequest
             'serial_page' => ['nullable', 'integer', 'min:1'],
             'serial_per_page' => ['nullable', 'integer', 'min:1', 'max:200'],
             'serial_q' => ['nullable', 'string', 'max:100'],
+            'serial_status' => ['nullable', 'string', Rule::in(array_map(
+                static fn (StockItemStatus $status): string => $status->value,
+                StockItemStatus::cases(),
+            ))],
             'movement_page' => ['nullable', 'integer', 'min:1'],
             'movement_per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ];
@@ -46,6 +52,7 @@ final class InventoryQueryRequest extends StrictFormRequest
             'serial_page',
             'serial_per_page',
             'serial_q',
+            'serial_status',
             'movement_page',
             'movement_per_page',
         ];

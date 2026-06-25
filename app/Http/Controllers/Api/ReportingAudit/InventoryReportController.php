@@ -48,7 +48,7 @@ class InventoryReportController extends Controller
 
         $detail = $this->getInventoryDetail->execute($filters);
         $inventory = $detail['inventory'];
-        $serials = $detail['available_serials'];
+        $serials = $detail['serials'];
         $movements = $this->movementQuery((int) $product->id)->paginate(
             perPage: (int) ($filters['movement_per_page'] ?? 10),
             columns: ['*'],
@@ -59,7 +59,7 @@ class InventoryReportController extends Controller
         return ApiResponse::success(
             [
                 'inventory' => new InventoryResource($inventory),
-                'available_serials' => $serials !== null
+                'serials' => $serials !== null
                     ? InventorySerialResource::collection($serials->items())
                     : [],
                 'recent_movements' => collect($movements->items())
@@ -68,7 +68,7 @@ class InventoryReportController extends Controller
             ],
             'Inventory report retrieved successfully.',
             meta: array_filter([
-                'available_serials_pagination' => $serials !== null ? [
+                'serials_pagination' => $serials !== null ? [
                     'current_page' => $serials->currentPage(),
                     'per_page' => $serials->perPage(),
                     'total' => $serials->total(),
