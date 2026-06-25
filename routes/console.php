@@ -1,5 +1,6 @@
 <?php
 
+use App\Application\Inventory\UseCases\CorrectWrongProductChainUseCase;
 use App\Models\TelegramInvoiceMessage;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -78,6 +79,78 @@ Artisan::command('telegram-invoices:register-webhook', function () {
 
     return self::SUCCESS;
 })->purpose('Register the Telegram invoice webhook using the configured bot token and URL.');
+
+Artisan::command(
+    'inventory:correct-product-chain
+        {purchase_order_line_id : The purchase_order_lines.id to correct}
+        {stock_in_line_id : The stock_in_lines.id to correct}
+        {from_product_id : The wrong products.id currently stored in the chain}
+        {to_product_id : The correct products.id that should replace it}
+        {--sale-order-line-id= : Optional sale_order_lines.id to correct}
+        {--stock-out-line-id= : Optional stock_out_lines.id to correct}
+        {--po-date= : Optional corrected PO date (YYYY-MM-DD)}
+        {--stock-in-date= : Optional corrected stock in date (YYYY-MM-DD)}
+        {--qc-date= : Optional corrected QC document date (YYYY-MM-DD)}
+        {--so-date= : Optional corrected sale order date (YYYY-MM-DD)}
+        {--stock-out-date= : Optional corrected stock out date (YYYY-MM-DD)}
+        {--yes : Skip the confirmation prompt}',
+    function () {
+        $payload = [
+            'purchase_order_line_id' => (int) $this->argument('purchase_order_line_id'),
+            'stock_in_line_id' => (int) $this->argument('stock_in_line_id'),
+            'from_product_id' => (int) $this->argument('from_product_id'),
+            'to_product_id' => (int) $this->argument('to_product_id'),
+            'sale_order_line_id' => $this->option('sale-order-line-id') !== null
+                ? (int) $this->option('sale-order-line-id')
+                : null,
+            'stock_out_line_id' => $this->option('stock-out-line-id') !== null
+                ? (int) $this->option('stock-out-line-id')
+                : null,
+            'po_date' => $this->option('po-date'),
+            'stock_in_date' => $this->option('stock-in-date'),
+            'qc_date' => $this->option('qc-date'),
+            'so_date' => $this->option('so-date'),
+            'stock_out_date' => $this->option('stock-out-date'),
+        ];
+
+        if (! $this->option('yes')) {
+            $confirmed = $this->confirm(
+                sprintf(
+                    'This will rewrite the linked transaction chain from product %d to %d. Continue?',
+                    $payload['from_product_id'],
+                    $payload['to_product_id'],
+                ),
+                false,
+            );
+
+            if (! $confirmed) {
+                $this->warn('Correction aborted.');
+
+                return self::FAILURE;
+            }
+        }
+
+        $result = app(CorrectWrongProductChainUseCase::class)->execute($payload);
+
+        $this->info('Product chain corrected successfully.');
+        $this->table(
+            ['Field', 'Value'],
+            [
+                ['from_product', sprintf('%d | %s | %s', $result['from_product']['id'], $result['from_product']['code'], $result['from_product']['name'])],
+                ['to_product', sprintf('%d | %s | %s', $result['to_product']['id'], $result['to_product']['code'], $result['to_product']['name'])],
+                ['purchase_order_line_id', (string) $result['purchase_order_line_id']],
+                ['stock_in_line_id', (string) $result['stock_in_line_id']],
+                ['sale_order_line_id', (string) ($result['sale_order_line_id'] ?? '-')],
+                ['stock_out_line_id', (string) ($result['stock_out_line_id'] ?? '-')],
+                ['qc_document_ids', $result['qc_document_ids'] === [] ? '-' : implode(', ', $result['qc_document_ids'])],
+                ['updated_stock_item_ids', $result['updated_stock_item_ids'] === [] ? '-' : implode(', ', $result['updated_stock_item_ids'])],
+                ['updated_stock_movement_ids', $result['updated_stock_movement_ids'] === [] ? '-' : implode(', ', $result['updated_stock_movement_ids'])],
+            ],
+        );
+
+        return self::SUCCESS;
+    }
+)->purpose('Correct a wrong product that was posted through PO, stock in, QC, sale order, stock out, and stock movements.');
 
 Schedule::command('telegram-invoices:prune-raw-payloads')->daily();
 Schedule::command('queue:work --stop-when-empty --tries=3 --timeout=60')

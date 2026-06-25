@@ -31,6 +31,11 @@ class StockOutLine extends Model
         return $this->hasMany(StockOutLineItem::class);
     }
 
+    public function stockOut(): BelongsTo
+    {
+        return $this->belongsTo(StockOut::class);
+    }
+
     public function saleOrderLine(): BelongsTo
     {
         return $this->belongsTo(SaleOrderLine::class);
