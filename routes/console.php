@@ -1,6 +1,7 @@
 <?php
 
 use App\Application\Inventory\UseCases\CorrectWrongProductChainUseCase;
+use App\Application\Inventory\UseCases\RebuildCorrectedInboundChainUseCase;
 use App\Models\TelegramInvoiceMessage;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -151,6 +152,74 @@ Artisan::command(
         return self::SUCCESS;
     }
 )->purpose('Correct a wrong product that was posted through PO, stock in, QC, sale order, stock out, and stock movements.');
+
+Artisan::command(
+    'inventory:rebuild-corrected-inbound
+        {purchase_order_line_id : The corrected purchase_order_lines.id to move}
+        {stock_in_line_id : The corrected stock_in_lines.id to move}
+        {supplier_id : The correct suppliers.id for the corrected product}
+        {--po-date= : Optional new PO date (YYYY-MM-DD)}
+        {--expected-delivery-date= : Optional new expected delivery date (YYYY-MM-DD)}
+        {--stock-in-date= : Optional new stock in date (YYYY-MM-DD)}
+        {--qc-date= : Optional new QC date (YYYY-MM-DD)}
+        {--po-number= : Optional explicit PO number}
+        {--stock-in-number= : Optional explicit stock in number}
+        {--qc-number= : Optional explicit QC document number}
+        {--yes : Skip the confirmation prompt}',
+    function () {
+        $payload = [
+            'purchase_order_line_id' => (int) $this->argument('purchase_order_line_id'),
+            'stock_in_line_id' => (int) $this->argument('stock_in_line_id'),
+            'supplier_id' => (int) $this->argument('supplier_id'),
+            'po_date' => $this->option('po-date'),
+            'expected_delivery_date' => $this->option('expected-delivery-date'),
+            'stock_in_date' => $this->option('stock-in-date'),
+            'qc_date' => $this->option('qc-date'),
+            'po_number' => $this->option('po-number'),
+            'stock_in_number' => $this->option('stock-in-number'),
+            'qc_number' => $this->option('qc-number'),
+        ];
+
+        if (! $this->option('yes')) {
+            $confirmed = $this->confirm(
+                sprintf(
+                    'Create a new PO, stock in, and QC document for purchase_order_line_id %d / stock_in_line_id %d?',
+                    $payload['purchase_order_line_id'],
+                    $payload['stock_in_line_id'],
+                ),
+                false,
+            );
+
+            if (! $confirmed) {
+                $this->warn('Inbound rebuild aborted.');
+
+                return self::FAILURE;
+            }
+        }
+
+        $result = app(RebuildCorrectedInboundChainUseCase::class)->execute($payload);
+
+        $this->info('Corrected inbound chain rebuilt successfully.');
+        $this->table(
+            ['Field', 'Value'],
+            [
+                ['new_purchase_order_id', (string) $result['new_purchase_order_id']],
+                ['new_po_number', $result['new_po_number']],
+                ['new_stock_in_id', (string) $result['new_stock_in_id']],
+                ['new_stock_in_number', $result['new_stock_in_number']],
+                ['new_stock_in_line_id', (string) $result['new_stock_in_line_id']],
+                ['new_qc_document_id', (string) ($result['new_qc_document_id'] ?? '-')],
+                ['new_qc_number', (string) ($result['new_qc_number'] ?? '-')],
+                ['supplier', sprintf('%d | %s', $result['supplier_id'], $result['supplier_name'])],
+                ['product', sprintf('%d | %s | %s', $result['product_id'], $result['product_code'], $result['product_name'])],
+                ['moved_stock_item_ids', implode(', ', $result['moved_stock_item_ids'])],
+                ['moved_qc_check_ids', $result['moved_qc_check_ids'] === [] ? '-' : implode(', ', $result['moved_qc_check_ids'])],
+            ],
+        );
+
+        return self::SUCCESS;
+    }
+)->purpose('Create a new PO, stock in, and QC document for corrected serials and move the inbound references onto those new documents.');
 
 Schedule::command('telegram-invoices:prune-raw-payloads')->daily();
 Schedule::command('queue:work --stop-when-empty --tries=3 --timeout=60')
