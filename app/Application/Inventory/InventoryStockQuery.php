@@ -97,7 +97,7 @@ final class InventoryStockQuery
     public function applyDefaultSort(Builder $query): Builder
     {
         return $query
-            ->orderByRaw("CASE {$this->stockStatusExpression()} WHEN 'out_of_stock' THEN 0 WHEN 'low_stock' THEN 1 ELSE 2 END")
+            ->orderByRaw("{$this->availableQtyExpression()} DESC")
             ->orderBy('p.product_code');
     }
 
