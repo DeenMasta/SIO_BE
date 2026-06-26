@@ -27,9 +27,9 @@ class UpdateSaleOrderUseCase implements UseCase
             ]);
         }
 
-        if (in_array($saleOrder->status, [SaleOrderStatus::Confirmed, SaleOrderStatus::Fulfilled], true) && array_key_exists('lines', $data)) {
+        if ($saleOrder->status === SaleOrderStatus::Fulfilled && array_key_exists('lines', $data)) {
             throw ValidationException::withMessages([
-                'lines' => ['Only DRAFT sales orders allow full line item editing. Use addon-lines for CONFIRMED or FULFILLED orders.'],
+                'lines' => ['Only DRAFT or CONFIRMED sales orders allow full line item editing. Use addon-lines for FULFILLED orders.'],
             ]);
         }
 
