@@ -44,6 +44,9 @@ class GetDashboardSummaryUseCase implements UseCase
             ->whereNull('stock_item_id')
             ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'IN_STOCK' THEN qty_in ELSE 0 END), 0) as qty_in_stock_in")
             ->selectRaw("COALESCE(SUM(CASE WHEN from_status = 'IN_STOCK' THEN qty_out ELSE 0 END), 0) as qty_in_stock_out")
+            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'DELIVERED' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'DELIVERED' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) as qty_delivered")
+            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'RETURNED' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'RETURNED' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) as qty_returned")
+            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'RETURNED_TO_SUPPLIER' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'RETURNED_TO_SUPPLIER' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) as qty_returned_to_supplier")
             ->first();
 
         $lowStockCount = $this->lowStockAlertService->lowStockCount();
@@ -111,9 +114,9 @@ class GetDashboardSummaryUseCase implements UseCase
             'items_received_pending_qc' => (int) ($totals?->qty_received_pending_qc ?? 0),
             'items_in_stock' => $itemsInStock,
             'items_under_repair' => (int) ($totals?->qty_under_repair ?? 0),
-            'items_delivered' => (int) ($totals?->qty_delivered ?? 0),
-            'items_returned' => (int) ($totals?->qty_returned ?? 0),
-            'items_returned_to_supplier' => (int) ($totals?->qty_returned_to_supplier ?? 0),
+            'items_delivered' => (int) ($totals?->qty_delivered ?? 0) + max((int) ($nonSerializedTotals?->qty_delivered ?? 0), 0),
+            'items_returned' => (int) ($totals?->qty_returned ?? 0) + max((int) ($nonSerializedTotals?->qty_returned ?? 0), 0),
+            'items_returned_to_supplier' => (int) ($totals?->qty_returned_to_supplier ?? 0) + max((int) ($nonSerializedTotals?->qty_returned_to_supplier ?? 0), 0),
             'low_stock_count' => $lowStockCount,
             'open_po_count' => $openPoCount,
             'overdue_po_count' => $overduePoCount,

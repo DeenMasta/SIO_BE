@@ -1,6 +1,7 @@
 <?php
 
 use App\Application\Inventory\UseCases\CorrectWrongProductChainUseCase;
+use App\Application\Inventory\UseCases\DeleteObsoleteNonSerializedStockInLinesUseCase;
 use App\Application\Inventory\UseCases\RebuildCorrectedInboundChainUseCase;
 use App\Models\TelegramInvoiceMessage;
 use Illuminate\Foundation\Inspiring;
@@ -80,6 +81,56 @@ Artisan::command('telegram-invoices:register-webhook', function () {
 
     return self::SUCCESS;
 })->purpose('Register the Telegram invoice webhook using the configured bot token and URL.');
+
+Artisan::command(
+    'inventory:delete-obsolete-nonserialized-stock-in-lines
+        {stock_in_id : The stock_in.id that contains obsolete non-serialized lines}
+        {--stock-in-line-id=* : One or more stock_in_lines.id values to delete}
+        {--yes : Skip the confirmation prompt}',
+    function () {
+        $payload = [
+            'stock_in_id' => (int) $this->argument('stock_in_id'),
+            'stock_in_line_ids' => array_map(
+                static fn (mixed $id): int => (int) $id,
+                (array) $this->option('stock-in-line-id'),
+            ),
+        ];
+
+        if (! $this->option('yes')) {
+            $confirmed = $this->confirm(
+                sprintf(
+                    'Delete obsolete non-serialized stock in line(s) %s from stock_in_id %d?',
+                    implode(', ', $payload['stock_in_line_ids']),
+                    $payload['stock_in_id'],
+                ),
+                false,
+            );
+
+            if (! $confirmed) {
+                $this->warn('Deletion aborted.');
+
+                return self::FAILURE;
+            }
+        }
+
+        $result = app(DeleteObsoleteNonSerializedStockInLinesUseCase::class)->execute($payload);
+
+        $this->table(
+            ['Field', 'Value'],
+            [
+                ['stock_in_id', (string) $result['stock_in_id']],
+                ['deleted_line_ids', $result['deleted_line_ids'] === [] ? '-' : implode(', ', $result['deleted_line_ids'])],
+                ['deleted_movement_ids', $result['deleted_movement_ids'] === [] ? '-' : implode(', ', $result['deleted_movement_ids'])],
+                ['affected_product_ids', $result['affected_product_ids'] === [] ? '-' : implode(', ', $result['affected_product_ids'])],
+                ['deleted_empty_stock_in', $result['deleted_empty_stock_in'] ? 'yes' : 'no'],
+            ],
+        );
+
+        $this->info('Obsolete non-serialized stock in lines deleted successfully.');
+
+        return self::SUCCESS;
+    }
+)->purpose('Delete explicitly selected obsolete non-serialized stock in lines, remove their inbound movements, and recompute balances.');
 
 Artisan::command(
     'inventory:correct-product-chain

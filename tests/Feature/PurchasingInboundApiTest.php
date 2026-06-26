@@ -5,6 +5,9 @@ namespace Tests\Feature;
 use App\Models\AuditLog;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderLine;
+use App\Models\StockIn;
+use App\Models\StockInLine;
 use App\Models\StockItem;
 use App\Models\StockMovement;
 use App\Models\Supplier;
@@ -401,6 +404,107 @@ class PurchasingInboundApiTest extends TestCase
             ]],
         ])->assertUnprocessable()
             ->assertJsonValidationErrors(['lines.0.purchase_order_line_id']);
+    }
+
+    public function test_delete_obsolete_nonserialized_stock_in_lines_command_removes_lines_and_recomputes_balance(): void
+    {
+        $supplier = Supplier::factory()->create();
+        $user = User::factory()->create();
+        $product = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'requires_serial_number' => false,
+            'supplier_id' => $supplier->id,
+        ]);
+
+        $purchaseOrder = PurchaseOrder::factory()->create([
+            'supplier_id' => $supplier->id,
+            'status' => 'COMPLETED',
+            'created_by' => $user->id,
+        ]);
+
+        $purchaseOrderLine = PurchaseOrderLine::query()->create([
+            'purchase_order_id' => $purchaseOrder->id,
+            'product_id' => $product->id,
+            'ordered_qty' => 15,
+            'received_qty' => 15,
+            'unit_price' => 1,
+            'subtotal' => 15,
+        ]);
+
+        $stockIn = StockIn::factory()->create([
+            'purchase_order_id' => $purchaseOrder->id,
+            'supplier_id' => $supplier->id,
+            'stock_in_pic_id' => $user->id,
+        ]);
+
+        $obsoleteLine = StockInLine::query()->create([
+            'stock_in_id' => $stockIn->id,
+            'purchase_order_line_id' => $purchaseOrderLine->id,
+            'product_id' => $product->id,
+            'received_qty' => 10,
+        ]);
+
+        $keeperLine = StockInLine::query()->create([
+            'stock_in_id' => $stockIn->id,
+            'purchase_order_line_id' => $purchaseOrderLine->id,
+            'product_id' => $product->id,
+            'received_qty' => 5,
+        ]);
+
+        StockMovement::query()->create([
+            'movement_datetime' => now(),
+            'product_id' => $product->id,
+            'stock_item_id' => null,
+            'movement_type' => 'STOCK_IN',
+            'reference_table' => 'stock_in_lines',
+            'reference_id' => $obsoleteLine->id,
+            'qty_in' => 10,
+            'qty_out' => 0,
+            'to_status' => 'IN_STOCK',
+            'performed_by' => $user->id,
+        ]);
+
+        StockMovement::query()->create([
+            'movement_datetime' => now(),
+            'product_id' => $product->id,
+            'stock_item_id' => null,
+            'movement_type' => 'STOCK_IN',
+            'reference_table' => 'stock_in_lines',
+            'reference_id' => $keeperLine->id,
+            'qty_in' => 5,
+            'qty_out' => 0,
+            'to_status' => 'IN_STOCK',
+            'performed_by' => $user->id,
+        ]);
+
+        $this->artisan('inventory:delete-obsolete-nonserialized-stock-in-lines', [
+            'stock_in_id' => $stockIn->id,
+            '--stock-in-line-id' => [$obsoleteLine->id],
+            '--yes' => true,
+        ])->assertExitCode(0);
+
+        $this->assertDatabaseMissing('stock_in_lines', [
+            'id' => $obsoleteLine->id,
+        ]);
+        $this->assertDatabaseHas('stock_in_lines', [
+            'id' => $keeperLine->id,
+        ]);
+        $this->assertDatabaseMissing('stock_movements', [
+            'reference_table' => 'stock_in_lines',
+            'reference_id' => $obsoleteLine->id,
+        ]);
+        $this->assertDatabaseHas('purchase_order_lines', [
+            'id' => $purchaseOrderLine->id,
+            'received_qty' => 5,
+        ]);
+        $this->assertDatabaseHas('purchase_orders', [
+            'id' => $purchaseOrder->id,
+            'status' => 'ISSUED',
+        ]);
+        $this->assertDatabaseHas('stock_balances', [
+            'product_id' => $product->id,
+            'qty_in_stock' => 5,
+        ]);
     }
 
     public function test_purchase_order_show_includes_remaining_qty_and_product_details(): void

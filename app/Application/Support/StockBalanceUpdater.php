@@ -40,8 +40,11 @@ class StockBalanceUpdater
             ->whereNull('stock_item_id')
             ->whereIn('product_id', $ids)
             ->selectRaw('product_id')
-            ->selectRaw("COALESCE(SUM(CASE WHEN to_status IN ('IN_STOCK', 'RECEIVED') THEN qty_in ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status IN ('IN_STOCK', 'RECEIVED') THEN qty_out ELSE 0 END), 0) as qty_in_stock_non_serialized")
-            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'INTERNAL_USE' THEN qty_out ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'INTERNAL_USE' THEN qty_in ELSE 0 END), 0) as qty_internal_use_non_serialized")
+            ->selectRaw("COALESCE(SUM(CASE WHEN to_status IN ('IN_STOCK', 'RECEIVED') THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status IN ('IN_STOCK', 'RECEIVED') THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) as qty_in_stock_non_serialized")
+            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'DELIVERED' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'DELIVERED' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) as qty_delivered_non_serialized")
+            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'INTERNAL_USE' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'INTERNAL_USE' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) as qty_internal_use_non_serialized")
+            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'RETURNED' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'RETURNED' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) as qty_returned_non_serialized")
+            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'RETURNED_TO_SUPPLIER' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'RETURNED_TO_SUPPLIER' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) as qty_returned_to_supplier_non_serialized")
             ->groupBy('product_id')
             ->get()
             ->keyBy('product_id');
@@ -55,11 +58,11 @@ class StockBalanceUpdater
             return [
                 'product_id' => $productId,
                 'qty_in_stock' => (int) ($serialized->qty_in_stock_serialized ?? 0) + max($nonSerializedRaw, 0),
-                'qty_delivered' => (int) ($serialized->qty_delivered ?? 0),
+                'qty_delivered' => (int) ($serialized->qty_delivered ?? 0) + max((int) ($nonSerializedByProduct->get($productId)->qty_delivered_non_serialized ?? 0), 0),
                 'qty_internal_use' => (int) ($serialized->qty_internal_use ?? 0) + max((int) ($nonSerializedByProduct->get($productId)->qty_internal_use_non_serialized ?? 0), 0),
                 'qty_under_repair' => (int) ($serialized->qty_under_repair ?? 0),
-                'qty_returned' => (int) ($serialized->qty_returned ?? 0),
-                'qty_returned_to_supplier' => (int) ($serialized->qty_returned_to_supplier ?? 0),
+                'qty_returned' => (int) ($serialized->qty_returned ?? 0) + max((int) ($nonSerializedByProduct->get($productId)->qty_returned_non_serialized ?? 0), 0),
+                'qty_returned_to_supplier' => (int) ($serialized->qty_returned_to_supplier ?? 0) + max((int) ($nonSerializedByProduct->get($productId)->qty_returned_to_supplier_non_serialized ?? 0), 0),
                 'last_computed_at' => $timestamp,
                 'created_at' => $timestamp,
                 'updated_at' => $timestamp,

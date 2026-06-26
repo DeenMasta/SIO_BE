@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Customer;
 use App\Models\Product;
 use App\Models\StockIn;
 use App\Models\StockInLine;
@@ -106,6 +107,63 @@ class InventoryApiTest extends TestCase
             ->assertJsonPath('data.inventory.qty_available', 1)
             ->assertJsonPath('data.serials.0.serial_number', 'SER-AVAILABLE-001')
             ->assertJsonPath('meta.serials_pagination.total', 3);
+    }
+
+    public function test_non_serialized_inventory_detail_decreases_after_stock_out_and_tracks_delivered_total(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $staff = User::factory()->staff()->create();
+        $supplier = Supplier::factory()->create();
+        $customer = Customer::factory()->create();
+        $consumable = Product::factory()->create([
+            'product_code' => 'INV-CONS-OUT-001',
+            'product_name' => 'Thermal Paper',
+            'product_type' => 'CONSUMABLE',
+            'requires_serial_number' => false,
+            'supplier_id' => $supplier->id,
+            'reorder_level' => 0,
+            'status' => 'ACTIVE',
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-INV-OUT-001',
+            'stock_in_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [
+                [
+                    'product_id' => $consumable->id,
+                    'received_qty' => 100,
+                ],
+            ],
+        ])->assertCreated();
+
+        $this->postJson('/api/stock-outs', [
+            'stock_out_number' => 'SOUT-INV-OUT-001',
+            'idempotency_key' => 'idem-inv-out-001',
+            'stock_out_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'invoice_number' => 'INV-INV-OUT-001',
+            'lines' => [
+                [
+                    'product_id' => $consumable->id,
+                    'qty' => 20,
+                ],
+            ],
+        ])->assertCreated();
+
+        Sanctum::actingAs($staff, ['staff-access']);
+
+        $this->getJson('/api/inventories/'.$consumable->id)
+            ->assertOk()
+            ->assertJsonPath('data.inventory.qty_available', 80)
+            ->assertJsonPath('data.inventory.qty_in_stock', 80)
+            ->assertJsonPath('data.inventory.qty_delivered', 20);
+
+        $this->getJson('/api/dashboard/summary')
+            ->assertOk()
+            ->assertJsonPath('data.items_delivered', 20);
     }
 
     public function test_staff_can_filter_inventory_detail_serials_by_status(): void
