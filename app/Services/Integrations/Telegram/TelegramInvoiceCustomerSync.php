@@ -7,7 +7,7 @@ use Illuminate\Support\Str;
 
 class TelegramInvoiceCustomerSync
 {
-    public function syncFromParsedName(?string $customerName): ?Customer
+    public function syncFromParsedDetails(?string $customerName, ?string $phone = null, ?string $address = null): ?Customer
     {
         $normalizedName = $this->normalizeName($customerName);
 
@@ -25,6 +25,8 @@ class TelegramInvoiceCustomerSync
 
         return Customer::query()->create([
             'customer_name' => $normalizedName,
+            'phone' => $phone,
+            'address' => $address,
             'remarks' => 'Auto-created from Telegram invoice parsing.',
         ]);
     }

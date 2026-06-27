@@ -421,7 +421,6 @@ class TelegramInvoiceIntegrationTest extends TestCase
             'idempotency_key' => 'stock-out-key-001',
             'stock_out_date' => '2026-05-12',
             'customer_id' => $customer->id,
-            'invoice_number' => 'INV-STO-001',
             'pic_id' => $staff->id,
             'status' => 'POSTED',
         ]);
@@ -559,7 +558,6 @@ class TelegramInvoiceIntegrationTest extends TestCase
             'idempotency_key' => 'stock-out-manual-001',
             'stock_out_date' => '2026-05-12',
             'customer_id' => $customer->id,
-            'invoice_number' => 'LEGACY-STO-MANUAL-001',
             'pic_id' => $staff->id,
             'status' => 'POSTED',
         ]);
@@ -634,6 +632,88 @@ class TelegramInvoiceIntegrationTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.match_status', 'matched')
             ->assertJsonPath('data.matched_sale_order_id', $saleOrder->id);
+    }
+
+    public function test_parsed_invoice_creates_sale_order_when_items_match(): void
+    {
+        Storage::fake('local');
+        
+        $staff = User::factory()->staff()->create();
+        $package = \App\Models\Package::query()->create([
+            'package_code' => 'SPB',
+            'package_name' => 'SPB Starter Pack',
+            'status' => \App\Domain\MasterData\Enums\RecordStatus::Active,
+        ]);
+        $product = \App\Models\Product::query()->create([
+            'product_code' => 'P1',
+            'product_name' => 'P1 Product',
+            'product_type' => \App\Domain\MasterData\Enums\ProductType::Standard,
+            'selling_price' => 199.00,
+            'status' => \App\Domain\MasterData\Enums\RecordStatus::Active,
+        ]);
+        $package->products()->attach($product->id, ['quantity' => 1]);
+
+        $message = TelegramInvoiceMessage::query()->create([
+            'telegram_update_id' => 9999,
+            'telegram_chat_id' => '-10099887766',
+            'telegram_chat_title' => 'Invoices',
+            'telegram_message_id' => 999,
+            'telegram_user_id' => 888,
+            'telegram_username' => 'finance',
+            'caption' => 'Invoice with items',
+            'message_date' => now(),
+            'received_at' => now(),
+        ]);
+
+        $pdfPath = 'telegram-invoices/2026/05/invoice-items.pdf';
+        Storage::disk('local')->put($pdfPath, $this->makePdfContent(
+            "INVOICE\n".
+            "Invoice No: MYSZ-INV-002518/06/2026\n".
+            "Bill To:\n".
+            "SWEETLY COOKIES\n".
+            "Rembau Negeri Sembilan\n".
+            "012-3456789\n".
+            "\nItems\n".
+            "1 SPB Starter GD Pack B 1 Set 999.00 999.00\n"
+        ));
+
+        $item = InvoiceInboxItem::query()->create([
+            'source' => 'telegram',
+            'telegram_invoice_message_id' => $message->id,
+            'file_disk' => 'local',
+            'file_path' => $pdfPath,
+            'original_file_name' => 'invoice-items.pdf',
+            'mime_type' => 'application/pdf',
+            'telegram_file_id' => 'file-new',
+            'telegram_file_unique_id' => 'uniq-new',
+            'download_status' => 'downloaded',
+            'parse_status' => 'pending',
+            'readability_status' => 'unknown',
+        ]);
+
+        (new ParseTelegramInvoicePdfJob($item->id))->handle(
+            app(TelegramInvoicePdfParser::class),
+            app(\App\Services\Integrations\Telegram\TelegramInvoiceCustomerSync::class),
+            app(\App\Application\Support\UserNotificationService::class),
+        );
+
+        $item = $item->fresh();
+
+        $this->assertSame('parsed', $item?->parse_status);
+        $this->assertSame('002518/06/2026', $item?->invoice_number);
+        $this->assertSame('SWEETLY COOKIES', $item?->customer_name);
+        $this->assertNotNull($item?->matched_sale_order_id);
+
+        $saleOrder = SaleOrder::query()->find($item->matched_sale_order_id);
+        $this->assertNotNull($saleOrder);
+        $this->assertSame('DRAFT', $saleOrder->status->value);
+        $this->assertCount(1, $saleOrder->lines);
+        $this->assertSame($product->id, $saleOrder->lines->first()->product_id);
+        
+        $customer = Customer::query()->find($saleOrder->customer_id);
+        $this->assertSame('SWEETLY COOKIES', $customer->customer_name);
+        $this->assertSame('012-3456789', $customer->phone);
+        $this->assertSame('Rembau Negeri Sembilan', $customer->address);
     }
 
     private function makePdfContent(string $text): string

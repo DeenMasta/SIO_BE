@@ -18,7 +18,10 @@ class TelegramInvoicePdfParser
      *   ocr_text:?string,
      *   invoice_number:?string,
      *   customer_name:?string,
+     *   customer_phone:?string,
+     *   customer_address:?string,
      *   invoice_date:?string,
+     *   items:array<int, string>,
      *   confidence_score:float,
      *   review_notes:?string,
      *   extracted_json:array<string, mixed>
@@ -35,13 +38,20 @@ class TelegramInvoicePdfParser
 
         $invoiceNumber = $this->extractInvoiceNumber($text, $caption, $fileName);
         $invoiceDate = $this->extractInvoiceDate($text);
-        $customerName = $this->extractCustomerName($text);
+        
+        $customerDetails = $this->extractCustomerDetails($text);
+        $customerName = $customerDetails['name'];
+        $customerPhone = $customerDetails['phone'];
+        $customerAddress = $customerDetails['address'];
+
+        $items = $this->extractItems($text);
 
         $hasReadableText = mb_strlen($text) >= 20;
         $signals = array_filter([
             $invoiceNumber !== null ? 'invoice_number' : null,
             $invoiceDate !== null ? 'invoice_date' : null,
             $customerName !== null ? 'customer_name' : null,
+            !empty($items) ? 'items' : null,
         ]);
 
         if (! $hasReadableText) {
@@ -51,7 +61,10 @@ class TelegramInvoicePdfParser
                 'ocr_text' => null,
                 'invoice_number' => $invoiceNumber,
                 'customer_name' => $customerName,
+                'customer_phone' => $customerPhone,
+                'customer_address' => $customerAddress,
                 'invoice_date' => $invoiceDate,
+                'items' => $items,
                 'confidence_score' => $invoiceNumber !== null ? 0.35 : 0.00,
                 'review_notes' => 'PDF text extraction returned little or no text. Likely scanned or image-only PDF.',
                 'extracted_json' => [
@@ -84,7 +97,10 @@ class TelegramInvoicePdfParser
             'ocr_text' => $text,
             'invoice_number' => $invoiceNumber,
             'customer_name' => $customerName,
+            'customer_phone' => $customerPhone,
+            'customer_address' => $customerAddress,
             'invoice_date' => $invoiceDate,
+            'items' => $items,
             'confidence_score' => min($confidence, 0.99),
             'review_notes' => $parseStatus === 'parsed'
                 ? null
@@ -162,6 +178,8 @@ class TelegramInvoicePdfParser
     {
         $normalized = strtoupper(trim($token));
         $normalized = trim($normalized, " \t\n\r\0\x0B:;,.#");
+        
+        $normalized = str_replace('MYSZ-INV-', '', $normalized);
 
         if ($normalized === '' || mb_strlen($normalized) < 4) {
             return null;
@@ -202,7 +220,51 @@ class TelegramInvoicePdfParser
         return null;
     }
 
-    private function extractCustomerName(string $text): ?string
+    private function extractCustomerDetails(string $text): array
+    {
+        $details = ['name' => null, 'phone' => null, 'address' => null];
+
+        $labelPatterns = [
+            '/(?:bill|sold)\s*to\s*[:\-]?\s*\n(.*?)(?=\n\s*(?:invoice|date|due|items|total|notes?|dear|attention|\Z))/isu',
+            '/customer\s*(?:name)?\s*[:\-]?\s*\n(.*?)(?=\n\s*(?:invoice|date|due|items|total|notes?|dear|attention|\Z))/isu',
+        ];
+
+        $block = '';
+        foreach ($labelPatterns as $pattern) {
+            if (preg_match($pattern, $text, $matches) === 1) {
+                $block = trim($matches[1]);
+                break;
+            }
+        }
+
+        if ($block === '') {
+            $details['name'] = $this->extractCustomerNameFallback($text);
+            return $details;
+        }
+
+        $lines = array_filter(array_map('trim', explode("\n", $block)));
+        $lines = array_values($lines);
+
+        if (count($lines) > 0) {
+            $details['name'] = $this->sanitizeCustomerNameCandidate(array_shift($lines));
+            
+            $addressLines = [];
+            foreach ($lines as $line) {
+                if (preg_match('/(?:tel|phone|h\/?p|mobile)\s*[:\-\.]?\s*([\+\d\-\s]{8,15})/iu', $line, $match)) {
+                    $details['phone'] = trim($match[1]);
+                } elseif (preg_match('/^\+?6?01\d{1}[\-\s]?\d{7,8}$/i', $line, $match) || preg_match('/^\+?6?0\d{1,2}[\-\s]?\d{6,8}$/i', $line, $match)) {
+                    $details['phone'] = trim($match[0]);
+                } else {
+                    $addressLines[] = $line;
+                }
+            }
+            $details['address'] = implode(', ', $addressLines) ?: null;
+        }
+
+        return $details;
+    }
+
+    private function extractCustomerNameFallback(string $text): ?string
     {
         $labelPatterns = [
             '/bill\s*to\s*[:\-]?\s*\n*([^\n]{3,120})/iu',
@@ -223,6 +285,17 @@ class TelegramInvoicePdfParser
         }
 
         return null;
+    }
+
+    private function extractItems(string $text): array
+    {
+        $items = [];
+        
+        if (preg_match_all('/^(?:\|\s*)?\d+\s*(?:\|\s*\*\*)?\s*([A-Z0-9]{3,20})\b/mu', $text, $matches)) {
+            $items = $matches[1];
+        }
+        
+        return array_values(array_unique($items));
     }
 
     private function sanitizeCustomerNameCandidate(string $value): ?string
