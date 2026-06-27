@@ -291,7 +291,7 @@ class TelegramInvoicePdfParser
     {
         $items = [];
         
-        if (preg_match_all('/^(?:\|\s*)?\d+\s*(?:\|\s*\*\*)?\s*([A-Z0-9]{3,20})\b/mu', $text, $matches)) {
+        if (preg_match_all('/^[ \t]*(?:\|\s*)?\d+\s*(?:\|\s*\*\*)?\s*([A-Z0-9]{3,20})\b/mu', $text, $matches)) {
             $items = $matches[1];
         }
         

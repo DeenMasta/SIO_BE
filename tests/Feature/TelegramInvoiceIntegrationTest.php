@@ -125,6 +125,12 @@ class TelegramInvoiceIntegrationTest extends TestCase
             app(\App\Application\Support\UserNotificationService::class),
         );
 
+        // Manually run match job since queue is sync and wait for commit
+        (new MatchTelegramInvoiceJob($item->id))->handle(
+            app(TelegramInvoiceMatcher::class),
+            app(\App\Application\Support\UserNotificationService::class),
+        );
+
         $item = $item->fresh();
 
         $this->assertSame('parsed', $item?->parse_status);
@@ -447,8 +453,8 @@ class TelegramInvoiceIntegrationTest extends TestCase
             'download_status' => 'downloaded',
             'parse_status' => 'parsed',
             'readability_status' => 'text_pdf',
-            'invoice_number' => 'INV-STO-001',
-            'ocr_text' => 'Invoice No: INV-STO-001',
+            'invoice_number' => 'STO-2026-0001',
+            'ocr_text' => 'Invoice No: STO-2026-0001',
         ]);
 
         (new MatchTelegramInvoiceJob($item->id))->handle(
@@ -643,13 +649,15 @@ class TelegramInvoiceIntegrationTest extends TestCase
             'package_code' => 'SPB',
             'package_name' => 'SPB Starter Pack',
             'status' => \App\Domain\MasterData\Enums\RecordStatus::Active,
+            'created_by' => $staff->id,
         ]);
         $product = \App\Models\Product::query()->create([
             'product_code' => 'P1',
             'product_name' => 'P1 Product',
-            'product_type' => \App\Domain\MasterData\Enums\ProductType::Standard,
+            'product_type' => \App\Domain\MasterData\Enums\ProductType::Device,
             'selling_price' => 199.00,
             'status' => \App\Domain\MasterData\Enums\RecordStatus::Active,
+            'created_by' => $staff->id,
         ]);
         $package->products()->attach($product->id, ['quantity' => 1]);
 

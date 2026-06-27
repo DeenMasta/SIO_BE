@@ -74,6 +74,7 @@ class ParseTelegramInvoicePdfJob implements ShouldQueue
             // Attempt to create Sale Order if customer exists and items were parsed
             if ($customer && !empty($result['items'])) {
                 $lines = [];
+                $unmatchedCodes = [];
                 $allMatched = true;
 
                 foreach ($result['items'] as $code) {
@@ -108,11 +109,11 @@ class ParseTelegramInvoicePdfJob implements ShouldQueue
 
                     // Code not found
                     $allMatched = false;
-                    break;
+                    $unmatchedCodes[] = $code;
                 }
 
                 if (!$allMatched) {
-                    throw new \Exception('Failed to match all parsed items to a Product or Package in the system.');
+                    throw new \Exception('Failed to match items to a Product or Package: ' . implode(', ', $unmatchedCodes));
                 }
 
                 if (!empty($lines)) {
