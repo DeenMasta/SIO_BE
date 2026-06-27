@@ -655,6 +655,7 @@ class TelegramInvoiceIntegrationTest extends TestCase
             'product_code' => 'P1',
             'product_name' => 'P1 Product',
             'product_type' => \App\Domain\MasterData\Enums\ProductType::Device,
+            'uom' => 'PCS',
             'selling_price' => 199.00,
             'status' => \App\Domain\MasterData\Enums\RecordStatus::Active,
             'created_by' => $staff->id,
