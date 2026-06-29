@@ -25,6 +25,7 @@ class ParseTelegramInvoicePdfJob implements ShouldQueue
         TelegramInvoicePdfParser $parser,
         TelegramInvoiceCustomerSync $customerSync,
         UserNotificationService $notifications,
+        \App\Application\Support\DocumentNumberGenerator $documentNumberGenerator,
     ): void {
         $item = InvoiceInboxItem::query()
             ->with('telegramMessage')
@@ -119,10 +120,12 @@ class ParseTelegramInvoicePdfJob implements ShouldQueue
                 if (!empty($lines)) {
                     $payload = [
                         'customer_id' => $customer->id,
+                        'so_number' => $documentNumberGenerator->generateSaleOrderNumber(),
                         'so_date' => $result['invoice_date'] ?? now()->format('Y-m-d'),
                         'invoice_number' => $result['invoice_number'],
                         'status' => \App\Domain\SalesOutbound\Enums\SaleOrderStatus::Draft,
                         'remarks' => 'Auto-generated from parsed Telegram invoice.',
+                        'created_by' => \App\Models\User::query()->first()?->id ?? 1,
                         'lines' => $lines,
                     ];
 

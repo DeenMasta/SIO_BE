@@ -123,6 +123,7 @@ class TelegramInvoiceIntegrationTest extends TestCase
             app(TelegramInvoicePdfParser::class),
             app(\App\Services\Integrations\Telegram\TelegramInvoiceCustomerSync::class),
             app(\App\Application\Support\UserNotificationService::class),
+            app(\App\Application\Support\DocumentNumberGenerator::class),
         );
 
         // Manually run match job since queue is sync and wait for commit
@@ -191,6 +192,7 @@ class TelegramInvoiceIntegrationTest extends TestCase
             app(TelegramInvoicePdfParser::class),
             app(\App\Services\Integrations\Telegram\TelegramInvoiceCustomerSync::class),
             app(\App\Application\Support\UserNotificationService::class),
+            app(\App\Application\Support\DocumentNumberGenerator::class),
         );
 
         $this->assertSame(1, Customer::query()->count('*'));
@@ -241,6 +243,7 @@ class TelegramInvoiceIntegrationTest extends TestCase
             app(TelegramInvoicePdfParser::class),
             app(\App\Services\Integrations\Telegram\TelegramInvoiceCustomerSync::class),
             app(\App\Application\Support\UserNotificationService::class),
+            app(\App\Application\Support\DocumentNumberGenerator::class),
         );
 
         $item = $item->fresh();
@@ -290,6 +293,7 @@ class TelegramInvoiceIntegrationTest extends TestCase
                 app(TelegramInvoicePdfParser::class),
                 app(\App\Services\Integrations\Telegram\TelegramInvoiceCustomerSync::class),
                 app(\App\Application\Support\UserNotificationService::class),
+                app(\App\Application\Support\DocumentNumberGenerator::class),
             );
         } catch (\Throwable) {
             $this->fail('Unreadable PDF should be marked for review, not throw.');
@@ -704,6 +708,7 @@ class TelegramInvoiceIntegrationTest extends TestCase
             app(TelegramInvoicePdfParser::class),
             app(\App\Services\Integrations\Telegram\TelegramInvoiceCustomerSync::class),
             app(\App\Application\Support\UserNotificationService::class),
+            app(\App\Application\Support\DocumentNumberGenerator::class),
         );
 
         $item = $item->fresh();
