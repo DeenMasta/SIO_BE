@@ -6,11 +6,32 @@ use App\Models\Customer;
 use App\Models\Product;
 use App\Models\Supplier;
 use App\Models\User;
+use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Laravel\Sanctum\Sanctum;
+use RuntimeException;
 
 abstract class TestCase extends BaseTestCase
 {
+    public function createApplication()
+    {
+        /** @var Application $app */
+        $app = parent::createApplication();
+
+        $defaultConnection = $app['config']->get('database.default');
+        $databaseName = $app['config']->get("database.connections.{$defaultConnection}.database");
+
+        if ($app->environment('testing') && ! ($defaultConnection === 'sqlite' && $databaseName === ':memory:')) {
+            throw new RuntimeException(sprintf(
+                'Refusing to run tests against [%s] database [%s]. Expected sqlite :memory: in testing.',
+                $defaultConnection,
+                (string) $databaseName
+            ));
+        }
+
+        return $app;
+    }
+
     /**
      * Helper method to create a fully delivered device in the inventory system.
      * Runs through: Stock In → QC Pass → Stock Out
