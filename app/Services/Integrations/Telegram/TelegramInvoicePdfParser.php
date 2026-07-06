@@ -2,12 +2,14 @@
 
 namespace App\Services\Integrations\Telegram;
 
+use App\Support\Parsing\SalesDocumentCodeCatalog;
 use Smalot\PdfParser\Parser;
 
 class TelegramInvoicePdfParser
 {
     public function __construct(
         private readonly Parser $parser,
+        private readonly SalesDocumentCodeCatalog $catalog,
     ) {
     }
 
@@ -70,6 +72,7 @@ class TelegramInvoicePdfParser
                 'extracted_json' => [
                     'text_length' => mb_strlen($text),
                     'signals_found' => array_values($signals),
+                    'items' => $items,
                     'source' => [
                         'caption' => $caption,
                         'file_name' => $fileName,
@@ -108,6 +111,7 @@ class TelegramInvoicePdfParser
             'extracted_json' => [
                 'text_length' => mb_strlen($text),
                 'signals_found' => array_values($signals),
+                'items' => $items,
                 'source' => [
                     'caption' => $caption,
                     'file_name' => $fileName,
@@ -289,13 +293,35 @@ class TelegramInvoicePdfParser
 
     private function extractItems(string $text): array
     {
+        $searchText = $this->extractItemSearchArea($text);
+        $codes = $this->catalog->getAllCodes();
+
+        usort($codes, static fn (string $left, string $right): int => strlen($right) <=> strlen($left));
+
         $items = [];
-        
-        if (preg_match_all('/^[ \t]*(?:\|\s*)?\d+\s*(?:\|\s*\*\*)?\s*([A-Z0-9]{3,20})\b/mu', $text, $matches)) {
-            $items = $matches[1];
+
+        foreach ($codes as $code) {
+            $pattern = '/(?<![A-Z0-9-])'.preg_quote($code, '/').'(?![A-Z0-9-])/iu';
+
+            if (preg_match($pattern, $searchText) === 1) {
+                $items[] = strtoupper($code);
+            }
         }
-        
+
         return array_values(array_unique($items));
+    }
+
+    private function extractItemSearchArea(string $text): string
+    {
+        if (preg_match(
+            '/(?:^|\n)(?:#?\s*item\b|items\b)(.*?)(?=\n\s*(?:sub\s*total|total|amount\s+due|note:|notes?:|terms?\s*&?\s*conditions?|thanks\s+for\s+your\s+business|\d+\/\d+\s*$|\Z))/isu',
+            $text,
+            $matches
+        ) === 1) {
+            return (string) ($matches[1] ?? '');
+        }
+
+        return $text;
     }
 
     private function sanitizeCustomerNameCandidate(string $value): ?string

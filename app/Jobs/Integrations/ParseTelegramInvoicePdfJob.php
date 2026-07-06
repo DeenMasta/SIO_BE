@@ -6,6 +6,7 @@ use App\Application\Support\UserNotificationService;
 use App\Models\InvoiceInboxItem;
 use App\Services\Integrations\Telegram\TelegramInvoiceCustomerSync;
 use App\Services\Integrations\Telegram\TelegramInvoicePdfParser;
+use App\Services\Integrations\Telegram\TelegramParsedSalesCodeMatcher;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Storage;
@@ -26,6 +27,7 @@ class ParseTelegramInvoicePdfJob implements ShouldQueue
         TelegramInvoiceCustomerSync $customerSync,
         UserNotificationService $notifications,
         \App\Application\Support\DocumentNumberGenerator $documentNumberGenerator,
+        TelegramParsedSalesCodeMatcher $salesCodeMatcher,
     ): void {
         $item = InvoiceInboxItem::query()
             ->with('telegramMessage')
@@ -74,47 +76,12 @@ class ParseTelegramInvoicePdfJob implements ShouldQueue
 
             // Attempt to create Sale Order if customer exists and items were parsed
             if ($customer && !empty($result['items'])) {
-                $lines = [];
-                $unmatchedCodes = [];
-                $allMatched = true;
+                $matchedLines = $salesCodeMatcher->buildSaleOrderLines($result['items']);
+                $lines = $matchedLines['lines'];
+                $unmatchedCodes = $matchedLines['unmatched_codes'];
 
-                foreach ($result['items'] as $code) {
-                    // Check if it's a package
-                    $package = \App\Models\Package::query()->with('products')->where('package_code', $code)->first();
-                    
-                    if ($package) {
-                        foreach ($package->products as $product) {
-                            $lines[] = [
-                                'product_id' => $product->id,
-                                'ordered_qty' => $product->pivot->quantity ?? 1,
-                                'unit_price' => $product->selling_price,
-                                'is_free' => false,
-                                'remarks' => 'From Package: ' . $package->package_name,
-                            ];
-                        }
-                        continue;
-                    }
-
-                    // Check if it's a product
-                    $product = \App\Models\Product::query()->where('product_code', $code)->first();
-                    if ($product) {
-                        $lines[] = [
-                            'product_id' => $product->id,
-                            'ordered_qty' => 1,
-                            'unit_price' => $product->selling_price,
-                            'is_free' => false,
-                            'remarks' => null,
-                        ];
-                        continue;
-                    }
-
-                    // Code not found
-                    $allMatched = false;
-                    $unmatchedCodes[] = $code;
-                }
-
-                if (!$allMatched) {
-                    throw new \Exception('Failed to match items to a Product or Package: ' . implode(', ', $unmatchedCodes));
+                if (! empty($unmatchedCodes)) {
+                    throw new \Exception('Failed to match items to a Product or Package: '.implode(', ', $unmatchedCodes));
                 }
 
                 if (!empty($lines)) {

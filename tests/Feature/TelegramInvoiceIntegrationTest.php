@@ -124,6 +124,7 @@ class TelegramInvoiceIntegrationTest extends TestCase
             app(\App\Services\Integrations\Telegram\TelegramInvoiceCustomerSync::class),
             app(\App\Application\Support\UserNotificationService::class),
             app(\App\Application\Support\DocumentNumberGenerator::class),
+            app(\App\Services\Integrations\Telegram\TelegramParsedSalesCodeMatcher::class),
         );
 
         // Manually run match job since queue is sync and wait for commit
@@ -193,6 +194,7 @@ class TelegramInvoiceIntegrationTest extends TestCase
             app(\App\Services\Integrations\Telegram\TelegramInvoiceCustomerSync::class),
             app(\App\Application\Support\UserNotificationService::class),
             app(\App\Application\Support\DocumentNumberGenerator::class),
+            app(\App\Services\Integrations\Telegram\TelegramParsedSalesCodeMatcher::class),
         );
 
         $this->assertSame(1, Customer::query()->count('*'));
@@ -244,6 +246,7 @@ class TelegramInvoiceIntegrationTest extends TestCase
             app(\App\Services\Integrations\Telegram\TelegramInvoiceCustomerSync::class),
             app(\App\Application\Support\UserNotificationService::class),
             app(\App\Application\Support\DocumentNumberGenerator::class),
+            app(\App\Services\Integrations\Telegram\TelegramParsedSalesCodeMatcher::class),
         );
 
         $item = $item->fresh();
@@ -294,6 +297,7 @@ class TelegramInvoiceIntegrationTest extends TestCase
                 app(\App\Services\Integrations\Telegram\TelegramInvoiceCustomerSync::class),
                 app(\App\Application\Support\UserNotificationService::class),
                 app(\App\Application\Support\DocumentNumberGenerator::class),
+                app(\App\Services\Integrations\Telegram\TelegramParsedSalesCodeMatcher::class),
             );
         } catch (\Throwable) {
             $this->fail('Unreadable PDF should be marked for review, not throw.');
@@ -656,8 +660,8 @@ class TelegramInvoiceIntegrationTest extends TestCase
             'created_by' => $staff->id,
         ]);
         $product = \App\Models\Product::query()->create([
-            'product_code' => 'P1',
-            'product_name' => 'P1 Product',
+            'product_code' => 'P60',
+            'product_name' => 'P60 Product',
             'product_type' => \App\Domain\MasterData\Enums\ProductType::Device,
             'uom' => 'PCS',
             'selling_price' => 199.00,
@@ -709,6 +713,7 @@ class TelegramInvoiceIntegrationTest extends TestCase
             app(\App\Services\Integrations\Telegram\TelegramInvoiceCustomerSync::class),
             app(\App\Application\Support\UserNotificationService::class),
             app(\App\Application\Support\DocumentNumberGenerator::class),
+            app(\App\Services\Integrations\Telegram\TelegramParsedSalesCodeMatcher::class),
         );
 
         $item = $item->fresh();
@@ -728,6 +733,80 @@ class TelegramInvoiceIntegrationTest extends TestCase
         $this->assertSame('SWEETLY COOKIES', $customer->customer_name);
         $this->assertSame('012-3456789', $customer->phone);
         $this->assertSame('Rembau Negeri Sembilan', $customer->address);
+    }
+
+    public function test_parser_extracts_only_approved_product_and_package_codes_from_items(): void
+    {
+        Storage::fake('local');
+
+        $staff = User::factory()->staff()->create();
+        $package = \App\Models\Package::query()->create([
+            'package_code' => 'SPB',
+            'package_name' => 'SPB Starter Pack',
+            'status' => \App\Domain\MasterData\Enums\RecordStatus::Active,
+            'created_by' => $staff->id,
+        ]);
+        $product = \App\Models\Product::query()->create([
+            'product_code' => 'P60',
+            'product_name' => 'P60 Product',
+            'product_type' => \App\Domain\MasterData\Enums\ProductType::Device,
+            'uom' => 'PCS',
+            'selling_price' => 199.00,
+            'status' => \App\Domain\MasterData\Enums\RecordStatus::Active,
+            'created_by' => $staff->id,
+        ]);
+        $package->products()->attach($product->id, ['quantity' => 1]);
+
+        $message = TelegramInvoiceMessage::query()->create([
+            'telegram_update_id' => 10001,
+            'telegram_chat_id' => '-10099887766',
+            'telegram_chat_title' => 'Invoices',
+            'telegram_message_id' => 1001,
+            'telegram_user_id' => 1000,
+            'telegram_username' => 'finance',
+            'caption' => 'Invoice with approved codes only',
+            'message_date' => now(),
+            'received_at' => now(),
+        ]);
+
+        $pdfPath = 'telegram-invoices/2026/05/invoice-approved-codes.pdf';
+        Storage::disk('local')->put($pdfPath, $this->makePdfContent(
+            "INVOICE\n".
+            "Invoice No: MYSZ-INV-002518/06/2026\n".
+            "Bill To:\n".
+            "SWEETLY COOKIES\n".
+            "\nItems\n".
+            "1 SPB Starter GD Pack B 1 Set 999.00 999.00\n".
+            "2 P60 Android Tablet 1 Unit 0.00 0.00\n".
+            "3 ABC Internal Label 1 Unit 0.00 0.00\n".
+            "Sub Total RM855.62\n"
+        ));
+
+        $item = InvoiceInboxItem::query()->create([
+            'source' => 'telegram',
+            'telegram_invoice_message_id' => $message->id,
+            'file_disk' => 'local',
+            'file_path' => $pdfPath,
+            'original_file_name' => 'invoice-approved-codes.pdf',
+            'mime_type' => 'application/pdf',
+            'telegram_file_id' => 'file-approved',
+            'telegram_file_unique_id' => 'uniq-approved',
+            'download_status' => 'downloaded',
+            'parse_status' => 'pending',
+            'readability_status' => 'unknown',
+        ]);
+
+        (new ParseTelegramInvoicePdfJob($item->id))->handle(
+            app(TelegramInvoicePdfParser::class),
+            app(\App\Services\Integrations\Telegram\TelegramInvoiceCustomerSync::class),
+            app(\App\Application\Support\UserNotificationService::class),
+            app(\App\Application\Support\DocumentNumberGenerator::class),
+            app(\App\Services\Integrations\Telegram\TelegramParsedSalesCodeMatcher::class),
+        );
+
+        $item = $item->fresh();
+
+        $this->assertSame(['SPB', 'P60'], $item?->extracted_json['items'] ?? []);
     }
 
     private function makePdfContent(string $text): string
