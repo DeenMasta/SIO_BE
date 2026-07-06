@@ -338,6 +338,27 @@ class MasterDataApiTest extends TestCase
         $this->deleteJson('/api/customers/'.$id)->assertOk();
     }
 
+    public function test_customer_create_rejects_duplicate_name_even_with_case_or_space_variation(): void
+    {
+        $admin = User::factory()->admin()->create();
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        Customer::factory()->create([
+            'customer_name' => 'ACME TRADING',
+        ]);
+
+        $this->postJson('/api/customers', [
+            'customer_name' => '  acme trading  ',
+            'contact_person' => 'Rina',
+            'phone' => '0123456789',
+            'email' => 'acme-duplicate@example.com',
+            'address' => 'Lot 10',
+            'status' => 'ACTIVE',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('customer_name');
+    }
+
     public function test_staff_can_view_supplier_and_customer(): void
     {
         $staff = User::factory()->staff()->create();
