@@ -21,6 +21,7 @@ class SaleOrder extends Model
         'status',
         'created_by',
         'remarks',
+        'quick_stock_out_id',
     ];
 
     protected function casts(): array
@@ -45,5 +46,15 @@ class SaleOrder extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function quickStockOut(): BelongsTo
+    {
+        return $this->belongsTo(QuickStockOut::class);
+    }
+
+    public function convertedFromQuickStockOut(): HasOne
+    {
+        return $this->hasOne(QuickStockOut::class, 'converted_sale_order_id');
     }
 }

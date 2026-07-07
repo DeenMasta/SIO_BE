@@ -6,19 +6,20 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class StockOutLineItem extends Model
+class QuickStockOutLineItem extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'stock_out_line_id',
+        'quick_stock_out_line_id',
         'stock_item_id',
-        'quick_stock_out_line_item_id',
+        'serial_number_snapshot',
+        'stock_out_line_item_id',
     ];
 
-    public function stockOutLine(): BelongsTo
+    public function quickStockOutLine(): BelongsTo
     {
-        return $this->belongsTo(StockOutLine::class);
+        return $this->belongsTo(QuickStockOutLine::class);
     }
 
     public function stockItem(): BelongsTo
@@ -26,8 +27,8 @@ class StockOutLineItem extends Model
         return $this->belongsTo(StockItem::class);
     }
 
-    public function quickStockOutLineItem(): BelongsTo
+    public function stockOutLineItem(): BelongsTo
     {
-        return $this->belongsTo(QuickStockOutLineItem::class);
+        return $this->belongsTo(StockOutLineItem::class);
     }
 }

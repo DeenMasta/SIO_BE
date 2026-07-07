@@ -20,14 +20,21 @@ class StockOutResource extends JsonResource
             'idempotency_key' => $this->idempotency_key,
             'stock_out_date' => $this->stock_out_date,
             'customer_id' => $this->customer_id,
+            'invoice_number' => $this->invoice_number,
             'pick_list_reference' => $this->pick_list_reference,
             'pic_id' => $this->pic_id,
             'status' => $this->status?->value,
             'remarks' => $this->remarks,
             'lines' => $this->lines->map(fn ($line): array => [
                 'id'             => $line->id,
+                'sale_order_line_id' => $line->sale_order_line_id,
                 'product_id'     => $line->product_id,
                 'qty'            => $line->qty,
+                'ordered_qty' => $line->saleOrderLine?->ordered_qty,
+                'fulfilled_qty' => $line->saleOrderLine?->fulfilled_qty,
+                'remaining_qty' => $line->saleOrderLine
+                    ? max((int) $line->saleOrderLine->ordered_qty - (int) $line->saleOrderLine->fulfilled_qty, 0)
+                    : null,
                 'remarks'        => $line->remarks,
                 'stock_item_ids' => $line->lineItems->pluck('stock_item_id')->values(),
                 'dispatched_items' => $line->lineItems->map(fn ($item): array => [

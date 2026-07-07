@@ -16,6 +16,7 @@ class StockOut extends Model
 
     protected $fillable = [
         'sale_order_id',
+        'quick_stock_out_id',
         'stock_out_number',
         'idempotency_key',
         'stock_out_date',
@@ -43,5 +44,10 @@ class StockOut extends Model
     public function saleOrder(): BelongsTo
     {
         return $this->belongsTo(SaleOrder::class);
+    }
+
+    public function quickStockOut(): BelongsTo
+    {
+        return $this->belongsTo(QuickStockOut::class);
     }
 }

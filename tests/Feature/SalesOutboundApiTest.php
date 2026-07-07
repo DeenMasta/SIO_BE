@@ -227,6 +227,101 @@ class SalesOutboundApiTest extends TestCase
         ]);
     }
 
+    public function test_confirmed_sale_order_can_be_fulfilled_through_multiple_partial_stock_outs(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create([
+            'product_code' => 'PARTIAL-STOCKOUT-1001',
+            'product_type' => 'CONSUMABLE',
+            'requires_serial_number' => false,
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        StockMovement::query()->create([
+            'movement_datetime' => now(),
+            'product_id' => $product->id,
+            'stock_item_id' => null,
+            'movement_type' => 'STOCK_IN',
+            'reference_table' => 'test_seed',
+            'reference_id' => 1101,
+            'qty_in' => 5,
+            'qty_out' => 0,
+            'to_status' => 'IN_STOCK',
+            'performed_by' => $admin->id,
+        ]);
+
+        $saleOrder = $this->postJson('/api/sale-orders', [
+            'so_number' => 'SO-PARTIAL-001',
+            'so_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'invoice_number' => 'INV-PARTIAL-001',
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 5,
+                'unit_price' => 10,
+            ]],
+        ])->assertCreated();
+
+        $saleOrderId = (int) $saleOrder->json('data.id');
+        $saleOrderLineId = (int) $saleOrder->json('data.lines.0.id');
+
+        $this->patchJson('/api/sale-orders/'.$saleOrderId.'/confirm')
+            ->assertOk()
+            ->assertJsonPath('data.status', 'CONFIRMED');
+
+        $this->postJson('/api/stock-outs', [
+            'sale_order_id' => $saleOrderId,
+            'stock_out_number' => 'SOUT-PARTIAL-001-A',
+            'idempotency_key' => 'idem-partial-001-a',
+            'stock_out_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'sale_order_line_id' => $saleOrderLineId,
+                'qty' => 2,
+            ]],
+        ])->assertCreated()
+            ->assertJsonPath('data.lines.0.sale_order_line_id', $saleOrderLineId)
+            ->assertJsonPath('data.lines.0.ordered_qty', 5)
+            ->assertJsonPath('data.lines.0.fulfilled_qty', 2)
+            ->assertJsonPath('data.lines.0.remaining_qty', 3);
+
+        $this->assertDatabaseHas('sale_orders', [
+            'id' => $saleOrderId,
+            'status' => 'CONFIRMED',
+        ]);
+        $this->assertDatabaseHas('sale_order_lines', [
+            'id' => $saleOrderLineId,
+            'fulfilled_qty' => 2,
+        ]);
+
+        $this->postJson('/api/stock-outs', [
+            'sale_order_id' => $saleOrderId,
+            'stock_out_number' => 'SOUT-PARTIAL-001-B',
+            'idempotency_key' => 'idem-partial-001-b',
+            'stock_out_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'sale_order_line_id' => $saleOrderLineId,
+                'qty' => 3,
+            ]],
+        ])->assertCreated()
+            ->assertJsonPath('data.lines.0.fulfilled_qty', 5)
+            ->assertJsonPath('data.lines.0.remaining_qty', 0);
+
+        $this->assertDatabaseHas('sale_orders', [
+            'id' => $saleOrderId,
+            'status' => 'FULFILLED',
+        ]);
+        $this->assertDatabaseHas('sale_order_lines', [
+            'id' => $saleOrderLineId,
+            'fulfilled_qty' => 5,
+        ]);
+    }
+
     public function test_fulfilled_sale_order_allows_header_updates_but_rejects_line_changes(): void
     {
         $admin = User::factory()->admin()->create();

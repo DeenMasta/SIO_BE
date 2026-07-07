@@ -82,6 +82,7 @@ class PostStockOutUseCase implements UseCase
 
                 $stockOutData = [
                     'sale_order_id' => $saleOrder?->id,
+                    'quick_stock_out_id' => $data['quick_stock_out_id'] ?? null,
                     'stock_out_number' => $data['stock_out_number'],
                     'idempotency_key' => $data['idempotency_key'],
                     'stock_out_date' => $data['stock_out_date'],
@@ -107,6 +108,7 @@ class PostStockOutUseCase implements UseCase
                 $product = Product::query()->findOrFail((int) $line['product_id']);
                 $qty = (int) $line['qty'];
                 $saleOrderLineId = $line['sale_order_line_id'] ?? null;
+                $quickStockOutLineId = $line['quick_stock_out_line_id'] ?? null;
 
                 if ($saleOrder && $saleOrderLineId) {
                     $saleOrderLine = SaleOrderLine::query()
@@ -138,6 +140,7 @@ class PostStockOutUseCase implements UseCase
 
                 $stockOutLine = $stockOut->lines()->create([
                     'sale_order_line_id' => $saleOrderLineId,
+                    'quick_stock_out_line_id' => $quickStockOutLineId,
                     'product_id' => $product->id,
                     'qty' => $qty,
                     'remarks' => $line['remarks'] ?? null,
@@ -181,10 +184,20 @@ class PostStockOutUseCase implements UseCase
                     }
 
                     $usedStockItemIds = array_values(array_merge($usedStockItemIds, $stockItemIds));
+                    $quickStockOutLineItemIds = array_values(array_map('intval', Arr::wrap($line['quick_stock_out_line_item_ids'] ?? [])));
+                    if ($quickStockOutLineItemIds !== [] && count($quickStockOutLineItemIds) !== count($stockItemIds)) {
+                        throw ValidationException::withMessages([
+                            'lines' => ['quick_stock_out_line_item_ids count must match stock_item_ids count when provided.'],
+                        ]);
+                    }
+                    $quickStockOutLineItemMap = $quickStockOutLineItemIds === []
+                        ? []
+                        : array_combine($stockItemIds, $quickStockOutLineItemIds);
 
                     foreach ($stockItems as $stockItem) {
                         $lineItem = $stockOutLine->lineItems()->create([
                             'stock_item_id' => $stockItem->id,
+                            'quick_stock_out_line_item_id' => $quickStockOutLineItemMap[(int) $stockItem->id] ?? null,
                         ]);
 
                         /** @var StockItem $stockItem */
@@ -273,7 +286,7 @@ class PostStockOutUseCase implements UseCase
                 );
 
                 $result = [
-                    'stock_out' => $stockOut->fresh('lines.lineItems', 'saleOrder'),
+                    'stock_out' => $stockOut->fresh(['saleOrder', 'lines.saleOrderLine', 'lines.lineItems.stockItem']),
                     'replayed' => false,
                 ];
 

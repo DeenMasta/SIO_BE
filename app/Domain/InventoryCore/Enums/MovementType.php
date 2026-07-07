@@ -19,4 +19,5 @@ enum MovementType: string
     case ReturnToSupplier = 'RETURN_TO_SUPPLIER';
     case ReturnToSupplierCancelled = 'RETURN_TO_SUPPLIER_CANCELLED';
     case Adjustment = 'ADJUSTMENT';
+    case QuickStockOut = 'QUICK_STOCK_OUT';
 }

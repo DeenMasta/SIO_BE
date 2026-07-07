@@ -14,6 +14,7 @@ class StockOutLine extends Model
     protected $fillable = [
         'stock_out_id',
         'sale_order_line_id',
+        'quick_stock_out_line_id',
         'product_id',
         'qty',
         'remarks',
@@ -39,5 +40,10 @@ class StockOutLine extends Model
     public function saleOrderLine(): BelongsTo
     {
         return $this->belongsTo(SaleOrderLine::class);
+    }
+
+    public function quickStockOutLine(): BelongsTo
+    {
+        return $this->belongsTo(QuickStockOutLine::class);
     }
 }

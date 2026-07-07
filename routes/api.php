@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\MasterData\PackageController;
 use App\Http\Controllers\Api\PurchasingInbound\PurchaseOrderController;
 use App\Http\Controllers\Api\PurchasingInbound\StockInController;
 use App\Http\Controllers\Api\PurchasingInbound\QcDocumentController;
+use App\Http\Controllers\Api\SalesOutbound\QuickStockOutController;
 use App\Http\Controllers\Api\SalesOutbound\SaleOrderController;
 use App\Http\Controllers\Api\ExceptionsReturns\CustomerReturnController;
 use App\Http\Controllers\Api\ExceptionsReturns\RepairController;
@@ -76,6 +77,9 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::patch('sale-orders/{saleOrder}/confirm', [SaleOrderController::class, 'confirm']);
     Route::patch('sale-orders/{saleOrder}/cancel', [SaleOrderController::class, 'cancel']);
     Route::post('sale-orders/{saleOrder}/addon-lines', [SaleOrderController::class, 'addAddonLines']);
+
+    Route::apiResource('quick-stock-outs', QuickStockOutController::class)->only(['index', 'store']);
+    Route::post('quick-stock-outs/{quickStockOut}/convert', [QuickStockOutController::class, 'convert']);
 
     Route::get('stock-ins/{stockIn}/pending-qc-items', [StockInController::class, 'pendingQcItems']);
     Route::get('stock-ins/export', [StockInController::class, 'export']);

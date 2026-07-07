@@ -4,7 +4,9 @@ namespace App\Application\Support;
 
 use App\Models\SaleOrder;
 use App\Models\PurchaseOrder;
+use App\Models\QuickStockOut;
 use App\Models\StockIn;
+use App\Models\StockOut;
 use Carbon\CarbonImmutable;
 
 class DocumentNumberGenerator
@@ -24,6 +26,24 @@ class DocumentNumberGenerator
             modelClass: SaleOrder::class,
             column: 'so_number',
             prefix: 'SO-'.CarbonImmutable::now()->format('Ymd'),
+        );
+    }
+
+    public function generateQuickStockOutNumber(): string
+    {
+        return $this->generateNext(
+            modelClass: QuickStockOut::class,
+            column: 'qso_number',
+            prefix: 'QSO-'.CarbonImmutable::now()->format('Ymd'),
+        );
+    }
+
+    public function generateStockOutNumber(): string
+    {
+        return $this->generateNext(
+            modelClass: StockOut::class,
+            column: 'stock_out_number',
+            prefix: 'SOUT-'.CarbonImmutable::now()->format('Ymd'),
         );
     }
 
