@@ -100,7 +100,7 @@ Artisan::command(
             60 => 470,
         ];
 
-        if ($performedBy <= 0 || ! DB::table('users')->whereKey($performedBy)->exists()) {
+        if ($performedBy <= 0 || ! DB::table('users')->where('id', $performedBy)->exists()) {
             $this->error(sprintf('User id %d does not exist.', $performedBy));
 
             return self::FAILURE;
