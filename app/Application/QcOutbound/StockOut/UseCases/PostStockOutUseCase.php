@@ -64,7 +64,18 @@ class PostStockOutUseCase implements UseCase
 
         try {
             return DB::transaction(function () use ($data): array {
-                $affectedProductIds = collect((array) ($data['lines'] ?? []))
+                $allLines = [
+                    ...array_map(
+                        static fn (array $line): array => [...$line, 'is_extra' => false],
+                        array_values((array) ($data['lines'] ?? [])),
+                    ),
+                    ...array_map(
+                        static fn (array $line): array => [...$line, 'is_extra' => true],
+                        array_values((array) ($data['extra_lines'] ?? [])),
+                    ),
+                ];
+
+                $affectedProductIds = collect($allLines)
                     ->pluck('product_id')
                     ->filter()
                     ->all();
@@ -104,13 +115,14 @@ class PostStockOutUseCase implements UseCase
 
                 $stockOut = $this->stockOuts->create($stockOutData);
 
-            foreach ($data['lines'] as $line) {
+            foreach ($allLines as $line) {
                 $product = Product::query()->findOrFail((int) $line['product_id']);
                 $qty = (int) $line['qty'];
                 $saleOrderLineId = $line['sale_order_line_id'] ?? null;
                 $quickStockOutLineId = $line['quick_stock_out_line_id'] ?? null;
+                $isExtra = (bool) ($line['is_extra'] ?? false);
 
-                if ($saleOrder && $saleOrderLineId) {
+                if ($saleOrder && !$isExtra && $saleOrderLineId) {
                     $saleOrderLine = SaleOrderLine::query()
                         ->where('sale_order_id', $saleOrder->id)
                         ->where('id', $saleOrderLineId)
@@ -132,7 +144,7 @@ class PostStockOutUseCase implements UseCase
                     }
 
                     $saleOrderLine->increment('fulfilled_qty', $qty);
-                } elseif ($saleOrder && !$saleOrderLineId) {
+                } elseif ($saleOrder && !$isExtra && !$saleOrderLineId) {
                     throw ValidationException::withMessages([
                         'lines' => ['Sale order line ID is required when fulfilling a sale order.'],
                     ]);
@@ -140,9 +152,11 @@ class PostStockOutUseCase implements UseCase
 
                 $stockOutLine = $stockOut->lines()->create([
                     'sale_order_line_id' => $saleOrderLineId,
+                    'is_extra' => $isExtra,
                     'quick_stock_out_line_id' => $quickStockOutLineId,
                     'product_id' => $product->id,
                     'qty' => $qty,
+                    'settled_qty' => 0,
                     'remarks' => $line['remarks'] ?? null,
                 ]);
 

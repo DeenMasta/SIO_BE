@@ -90,6 +90,8 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::get('stock-outs/serial-options', [StockOutController::class, 'serialOptions']);
     Route::get('stock-outs/export', [StockOutController::class, 'export']);
     Route::apiResource('stock-outs', StockOutController::class)->only(['index', 'store', 'show']);
+    Route::post('stock-outs/{id}/settle-extras', [StockOutController::class, 'settleExtras']);
+    Route::post('stock-outs/{id}/reverse-extras', [StockOutController::class, 'reverseExtras']);
     Route::get('repairs/export', [RepairController::class, 'export']);
     Route::apiResource('repairs', RepairController::class)->only(['index', 'store', 'show']);
     Route::patch('repairs/{id}/status', [RepairController::class, 'updateStatus']);

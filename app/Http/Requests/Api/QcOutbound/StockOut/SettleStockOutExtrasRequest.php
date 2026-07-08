@@ -1,0 +1,32 @@
+<?php
+
+namespace App\Http\Requests\Api\QcOutbound\StockOut;
+
+use App\Http\Requests\Api\StrictFormRequest;
+
+class SettleStockOutExtrasRequest extends StrictFormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        return [
+            'lines' => ['required', 'array', 'min:1'],
+            'lines.*.stock_out_line_id' => ['required', 'integer', 'exists:stock_out_lines,id'],
+            'lines.*.settle_qty' => ['nullable', 'integer', 'min:0'],
+            'lines.*.stock_item_ids' => ['nullable', 'array'],
+            'lines.*.stock_item_ids.*' => ['integer', 'distinct', 'exists:stock_items,id'],
+            'lines.*.is_free' => ['nullable', 'boolean'],
+            'lines.*.unit_price' => ['required', 'numeric', 'min:0'],
+            'lines.*.remarks' => ['nullable', 'string', 'max:2000'],
+        ];
+    }
+
+    protected function allowedFields(): array
+    {
+        return ['lines'];
+    }
+}

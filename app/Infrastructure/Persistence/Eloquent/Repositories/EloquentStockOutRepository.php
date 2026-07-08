@@ -11,7 +11,14 @@ class EloquentStockOutRepository implements StockOutRepository
     public function paginate(int $perPage = 15): LengthAwarePaginator
     {
         return StockOut::query()
-            ->with(['saleOrder', 'lines.saleOrderLine', 'lines.lineItems.stockItem'])
+            ->with([
+                'saleOrder',
+                'lines.product',
+                'lines.saleOrderLine',
+                'lines.settledSaleOrderLines',
+                'lines.lineItems.stockItem',
+                'lines.lineItems.settledSaleOrderLine',
+            ])
             ->latest('id')
             ->paginate($perPage);
     }
@@ -19,14 +26,28 @@ class EloquentStockOutRepository implements StockOutRepository
     public function findOrFail(int $id): StockOut
     {
         return StockOut::query()
-            ->with(['saleOrder', 'lines.saleOrderLine', 'lines.lineItems.stockItem'])
+            ->with([
+                'saleOrder',
+                'lines.product',
+                'lines.saleOrderLine',
+                'lines.settledSaleOrderLines',
+                'lines.lineItems.stockItem',
+                'lines.lineItems.settledSaleOrderLine',
+            ])
             ->findOrFail($id);
     }
 
     public function findByIdempotencyKey(string $idempotencyKey): ?StockOut
     {
         return StockOut::query()
-            ->with(['saleOrder', 'lines.saleOrderLine', 'lines.lineItems.stockItem'])
+            ->with([
+                'saleOrder',
+                'lines.product',
+                'lines.saleOrderLine',
+                'lines.settledSaleOrderLines',
+                'lines.lineItems.stockItem',
+                'lines.lineItems.settledSaleOrderLine',
+            ])
             ->where('idempotency_key', $idempotencyKey)
             ->first();
     }

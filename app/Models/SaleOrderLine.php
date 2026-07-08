@@ -14,6 +14,7 @@ class SaleOrderLine extends Model
     protected $fillable = [
         'sale_order_id',
         'product_id',
+        'source_stock_out_line_id',
         'ordered_qty',
         'fulfilled_qty',
         'is_free',
@@ -41,6 +42,11 @@ class SaleOrderLine extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function sourceStockOutLine(): BelongsTo
+    {
+        return $this->belongsTo(StockOutLine::class, 'source_stock_out_line_id');
     }
 
     public function dispatchedItems(): HasManyThrough

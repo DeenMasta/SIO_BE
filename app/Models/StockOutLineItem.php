@@ -13,8 +13,17 @@ class StockOutLineItem extends Model
     protected $fillable = [
         'stock_out_line_id',
         'stock_item_id',
+        'settled_sale_order_line_id',
+        'reversed_at',
         'quick_stock_out_line_item_id',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'reversed_at' => 'datetime',
+        ];
+    }
 
     public function stockOutLine(): BelongsTo
     {
@@ -29,5 +38,10 @@ class StockOutLineItem extends Model
     public function quickStockOutLineItem(): BelongsTo
     {
         return $this->belongsTo(QuickStockOutLineItem::class);
+    }
+
+    public function settledSaleOrderLine(): BelongsTo
+    {
+        return $this->belongsTo(SaleOrderLine::class, 'settled_sale_order_line_id');
     }
 }

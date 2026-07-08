@@ -28,18 +28,28 @@ class StockOutResource extends JsonResource
             'lines' => $this->lines->map(fn ($line): array => [
                 'id'             => $line->id,
                 'sale_order_line_id' => $line->sale_order_line_id,
+                'is_extra' => (bool) $line->is_extra,
                 'product_id'     => $line->product_id,
+                'product_code' => $line->product?->product_code,
+                'product_name' => $line->product?->product_name,
+                'product_type' => $line->product?->product_type?->value,
                 'qty'            => $line->qty,
+                'settled_qty' => (int) $line->settled_qty,
+                'reversed_qty' => (int) $line->reversed_qty,
+                'pending_qty' => max((int) $line->qty - (int) $line->settled_qty - (int) $line->reversed_qty, 0),
                 'ordered_qty' => $line->saleOrderLine?->ordered_qty,
                 'fulfilled_qty' => $line->saleOrderLine?->fulfilled_qty,
                 'remaining_qty' => $line->saleOrderLine
                     ? max((int) $line->saleOrderLine->ordered_qty - (int) $line->saleOrderLine->fulfilled_qty, 0)
                     : null,
                 'remarks'        => $line->remarks,
+                'settled_sale_order_line_ids' => $line->settledSaleOrderLines->pluck('id')->values(),
                 'stock_item_ids' => $line->lineItems->pluck('stock_item_id')->values(),
                 'dispatched_items' => $line->lineItems->map(fn ($item): array => [
                     'stock_item_id'         => $item->stock_item_id,
                     'serial_number'         => $item->stockItem?->serial_number,
+                    'settled_sale_order_line_id' => $item->settled_sale_order_line_id,
+                    'reversed_at' => $item->reversed_at,
                 ])->values(),
             ]),
             'created_at' => $this->created_at,

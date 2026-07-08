@@ -26,6 +26,7 @@ class SaleOrderResource extends JsonResource
             'lines' => $this->lines->map(fn ($line): array => [
                 'id' => $line->id,
                 'product_id' => $line->product_id,
+                'source_stock_out_line_id' => $line->source_stock_out_line_id,
                 'product_code' => $line->product?->product_code,
                 'product_name' => $line->product?->product_name,
                 'product_type' => $line->product?->product_type?->value,

@@ -14,9 +14,12 @@ class StockOutLine extends Model
     protected $fillable = [
         'stock_out_id',
         'sale_order_line_id',
+        'is_extra',
         'quick_stock_out_line_id',
         'product_id',
         'qty',
+        'settled_qty',
+        'reversed_qty',
         'remarks',
     ];
 
@@ -24,6 +27,9 @@ class StockOutLine extends Model
     {
         return [
             'qty' => 'integer',
+            'is_extra' => 'boolean',
+            'settled_qty' => 'integer',
+            'reversed_qty' => 'integer',
         ];
     }
 
@@ -42,8 +48,18 @@ class StockOutLine extends Model
         return $this->belongsTo(SaleOrderLine::class);
     }
 
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class);
+    }
+
     public function quickStockOutLine(): BelongsTo
     {
         return $this->belongsTo(QuickStockOutLine::class);
+    }
+
+    public function settledSaleOrderLines(): HasMany
+    {
+        return $this->hasMany(SaleOrderLine::class, 'source_stock_out_line_id');
     }
 }
