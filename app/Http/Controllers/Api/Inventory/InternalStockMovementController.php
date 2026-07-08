@@ -26,7 +26,7 @@ class InternalStockMovementController extends Controller
         $this->authorize('viewAny', InternalStockMovement::class);
 
         $records = InternalStockMovement::query()
-            ->with('lines')
+            ->with(['lines.stockItem', 'originalMovement', 'createdByUser'])
             ->latest('id')
             ->paginate((int) $request->integer('per_page', 15));
 
@@ -58,7 +58,9 @@ class InternalStockMovementController extends Controller
 
     public function show(int $id): JsonResponse
     {
-        $record = InternalStockMovement::query()->with('lines')->findOrFail($id);
+        $record = InternalStockMovement::query()
+            ->with(['lines.stockItem', 'originalMovement', 'createdByUser'])
+            ->findOrFail($id);
         $this->authorize('view', $record);
 
         return ApiResponse::success(new InternalStockMovementResource($record), 'Internal stock movement retrieved successfully.');
@@ -75,6 +77,11 @@ class InternalStockMovementController extends Controller
             'created_by' => (int) $request->user()->id,
         ]);
 
-        return ApiResponse::success(new InternalStockMovementResource($updated), 'Internal stock returned to stock successfully.');
+        return ApiResponse::success(
+            new InternalStockMovementResource(
+                $updated->loadMissing(['lines.stockItem', 'originalMovement', 'createdByUser'])
+            ),
+            'Internal stock returned to stock successfully.'
+        );
     }
 }
