@@ -3,9 +3,14 @@
 use App\Application\Inventory\UseCases\CorrectWrongProductChainUseCase;
 use App\Application\Inventory\UseCases\DeleteObsoleteNonSerializedStockInLinesUseCase;
 use App\Application\Inventory\UseCases\RebuildCorrectedInboundChainUseCase;
+use App\Application\Support\StockBalanceUpdater;
+use App\Domain\InventoryCore\Enums\MovementType;
+use App\Models\Product;
+use App\Models\StockMovement;
 use App\Models\TelegramInvoiceMessage;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Str;
@@ -81,6 +86,142 @@ Artisan::command('telegram-invoices:register-webhook', function () {
 
     return self::SUCCESS;
 })->purpose('Register the Telegram invoice webhook using the configured bot token and URL.');
+
+Artisan::command(
+    'inventory:correct-qty-available-2026-07-08
+        {--performed-by=1 : users.id recorded on the adjustment movement}
+        {--yes : Skip the confirmation prompt}',
+    function (StockBalanceUpdater $stockBalanceUpdater) {
+        $performedBy = (int) $this->option('performed-by');
+        $referenceId = (int) now()->format('YmdHis');
+        $corrections = [
+            14 => 406,
+            17 => 14,
+            60 => 470,
+        ];
+
+        if ($performedBy <= 0 || ! DB::table('users')->whereKey($performedBy)->exists()) {
+            $this->error(sprintf('User id %d does not exist.', $performedBy));
+
+            return self::FAILURE;
+        }
+
+        $currentAvailability = DB::table('stock_movements')
+            ->whereNull('stock_item_id')
+            ->whereIn('product_id', array_keys($corrections))
+            ->selectRaw('product_id')
+            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'IN_STOCK' THEN qty_in ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'IN_STOCK' THEN qty_out ELSE 0 END), 0) as qty_available")
+            ->groupBy('product_id')
+            ->pluck('qty_available', 'product_id');
+
+        $products = Product::query()
+            ->whereIn('id', array_keys($corrections))
+            ->get(['id', 'product_code', 'product_name', 'requires_serial_number'])
+            ->keyBy('id');
+
+        $previewRows = collect($corrections)
+            ->map(function (int $targetQty, int $productId) use ($currentAvailability, $products): array {
+                $product = $products->get($productId);
+                $currentQty = (int) ($currentAvailability[$productId] ?? 0);
+
+                return [
+                    'product_id' => (string) $productId,
+                    'product_code' => $product?->product_code ?? '-',
+                    'current_qty' => (string) $currentQty,
+                    'target_qty' => (string) $targetQty,
+                    'delta' => (string) ($targetQty - $currentQty),
+                ];
+            })
+            ->values()
+            ->all();
+
+        foreach ($products as $product) {
+            if ($product->requires_serial_number) {
+                $this->error(sprintf('Product %d (%s) is serialized; this command only supports non-serialized corrections.', $product->id, $product->product_code));
+
+                return self::FAILURE;
+            }
+        }
+
+        $this->table(
+            ['Product ID', 'Code', 'Current Qty', 'Target Qty', 'Delta'],
+            $previewRows,
+        );
+
+        if (! $this->option('yes')) {
+            $confirmed = $this->confirm('Post adjustment movements for these qty_available corrections?', false);
+
+            if (! $confirmed) {
+                $this->warn('Correction aborted.');
+
+                return self::FAILURE;
+            }
+        }
+
+        DB::transaction(function () use ($corrections, $currentAvailability, $performedBy, $referenceId): void {
+            foreach ($corrections as $productId => $targetQty) {
+                $currentQty = (int) ($currentAvailability[$productId] ?? 0);
+                $delta = $targetQty - $currentQty;
+
+                if ($delta === 0) {
+                    continue;
+                }
+
+                StockMovement::query()->create([
+                    'movement_datetime' => now(),
+                    'product_id' => $productId,
+                    'stock_item_id' => null,
+                    'movement_type' => MovementType::Adjustment,
+                    'reference_table' => 'artisan_qty_available_correction',
+                    'reference_id' => $referenceId,
+                    'qty_in' => $delta > 0 ? $delta : 0,
+                    'qty_out' => $delta < 0 ? abs($delta) : 0,
+                    'from_status' => $delta < 0 ? 'IN_STOCK' : null,
+                    'to_status' => $delta > 0 ? 'IN_STOCK' : null,
+                    'performed_by' => $performedBy,
+                    'remarks' => sprintf(
+                        'Manual qty_available correction on 2026-07-08. Adjusted from %d to %d.',
+                        $currentQty,
+                        $targetQty,
+                    ),
+                ]);
+            }
+        });
+
+        $stockBalanceUpdater->recomputeForProducts(array_keys($corrections));
+
+        $updatedAvailability = DB::table('stock_movements')
+            ->whereNull('stock_item_id')
+            ->whereIn('product_id', array_keys($corrections))
+            ->selectRaw('product_id')
+            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'IN_STOCK' THEN qty_in ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'IN_STOCK' THEN qty_out ELSE 0 END), 0) as qty_available")
+            ->groupBy('product_id')
+            ->pluck('qty_available', 'product_id');
+
+        $resultRows = collect($corrections)
+            ->map(function (int $targetQty, int $productId) use ($updatedAvailability, $products): array {
+                $product = $products->get($productId);
+
+                return [
+                    'product_id' => (string) $productId,
+                    'product_code' => $product?->product_code ?? '-',
+                    'updated_qty' => (string) ((int) ($updatedAvailability[$productId] ?? 0)),
+                    'target_qty' => (string) $targetQty,
+                ];
+            })
+            ->values()
+            ->all();
+
+        $this->table(
+            ['Product ID', 'Code', 'Updated Qty', 'Target Qty'],
+            $resultRows,
+        );
+
+        $this->info('Qty available corrections posted successfully.');
+
+        return self::SUCCESS;
+    }
+)->purpose('Post one-off non-serialized adjustment movements to correct qty_available for products 14, 17, and 60.');
 
 Artisan::command(
     'inventory:delete-obsolete-nonserialized-stock-in-lines
