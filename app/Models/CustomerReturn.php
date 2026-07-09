@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Domain\ExceptionsReturns\Enums\ExceptionTransactionStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class CustomerReturn extends Model
@@ -33,5 +34,10 @@ class CustomerReturn extends Model
     public function lines(): HasMany
     {
         return $this->hasMany(CustomerReturnLine::class);
+    }
+
+    public function createdByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 }

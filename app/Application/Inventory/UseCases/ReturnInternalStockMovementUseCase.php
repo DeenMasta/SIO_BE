@@ -8,6 +8,7 @@ use App\Application\Support\AuditLogger;
 use App\Application\Support\StockBalanceUpdater;
 use App\Application\Support\UserNotificationService;
 use App\Domain\InventoryCore\Enums\InternalStockMovementDirection;
+use App\Domain\MasterData\Enums\ProductType;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
 use App\Domain\ReportingAudit\Enums\AuditAction;
@@ -152,6 +153,15 @@ class ReturnInternalStockMovementUseCase implements UseCase
                     }
 
                     continue;
+                }
+
+                if ($product->product_type === ProductType::Consumable) {
+                    throw ValidationException::withMessages([
+                        'lines' => [sprintf(
+                            'Consumable product %s does not require serial numbers and cannot be returned through internal stock return.',
+                            $product->product_code,
+                        )],
+                    ]);
                 }
 
                 $issuedQty = (int) $originalMovement->lines

@@ -22,11 +22,23 @@ class CustomerReturnResource extends JsonResource
             'status' => $this->status?->value,
             'remarks' => $this->remarks,
             'created_by' => $this->created_by,
+            'created_by_user' => $this->whenLoaded('createdByUser', function (): ?array {
+                if (! $this->createdByUser) {
+                    return null;
+                }
+
+                return [
+                    'id' => $this->createdByUser->id,
+                    'name' => $this->createdByUser->name,
+                    'email' => $this->createdByUser->email,
+                ];
+            }),
             'lines' => $this->lines->map(fn ($line): array => [
                 'id' => $line->id,
                 'original_stock_out_line_id' => $line->original_stock_out_line_id,
                 'product_id' => $line->product_id,
                 'stock_item_id' => $line->stock_item_id,
+                'serial_number' => $line->stockItem?->serial_number,
                 'qty' => $line->qty,
                 'reason_for_return' => $line->reason_for_return,
                 'condition_on_return' => $line->condition_on_return,

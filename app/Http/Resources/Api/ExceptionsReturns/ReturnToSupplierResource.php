@@ -23,6 +23,17 @@ class ReturnToSupplierResource extends JsonResource
             'status' => $this->status?->value,
             'remarks' => $this->remarks,
             'created_by' => $this->created_by,
+            'created_by_user' => $this->whenLoaded('createdByUser', function (): ?array {
+                if (! $this->createdByUser) {
+                    return null;
+                }
+
+                return [
+                    'id' => $this->createdByUser->id,
+                    'name' => $this->createdByUser->name,
+                    'email' => $this->createdByUser->email,
+                ];
+            }),
             'lines' => $this->lines->map(fn ($line): array => [
                 'id' => $line->id,
                 'stock_in_line_id' => $line->stock_in_line_id,

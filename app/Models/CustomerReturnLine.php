@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CustomerReturnLine extends Model
 {
@@ -26,5 +27,10 @@ class CustomerReturnLine extends Model
         return [
             'qty' => 'integer',
         ];
+    }
+
+    public function stockItem(): BelongsTo
+    {
+        return $this->belongsTo(StockItem::class, 'stock_item_id');
     }
 }

@@ -30,7 +30,10 @@ class EloquentSaleOrderRepository implements SaleOrderRepository
             });
         }
 
-        return $query->latest('id')->paginate($perPage);
+        return $query
+            ->orderByDesc('so_date')
+            ->orderByDesc('id')
+            ->paginate($perPage);
     }
 
     public function findOrFail(int $id): SaleOrder

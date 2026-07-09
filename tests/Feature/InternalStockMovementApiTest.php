@@ -85,7 +85,7 @@ class InternalStockMovementApiTest extends TestCase
         ]);
     }
 
-    public function test_non_serialized_item_can_move_to_internal_use_and_return_partial_qty(): void
+    public function test_non_serialized_item_can_move_to_internal_use_and_deduct_available_qty(): void
     {
         $admin = User::factory()->admin()->create();
         $supplier = Supplier::factory()->create();
@@ -117,23 +117,12 @@ class InternalStockMovementApiTest extends TestCase
             ]],
         ])->assertCreated();
 
-        $movementId = (int) $issue->json('data.id');
-
-        $this->patchJson('/api/internal-stock-movements/'.$movementId.'/return', [
-            'movement_number' => 'INT-RET-ACC-001',
-            'movement_date' => now()->toDateString(),
-            'lines' => [[
-                'product_id' => $product->id,
-                'qty' => 2,
-            ]],
-        ])->assertOk();
-
         $inventory = $this->getJson('/api/inventories')
             ->assertOk()
             ->json('data.0');
 
-        $this->assertSame(4, $inventory['qty_available']);
-        $this->assertSame(1, $inventory['qty_internal_use']);
+        $this->assertSame(2, $inventory['qty_available']);
+        $this->assertSame(3, $inventory['qty_internal_use']);
 
         $this->assertDatabaseHas('stock_movements', [
             'product_id' => $product->id,
@@ -141,15 +130,9 @@ class InternalStockMovementApiTest extends TestCase
             'movement_type' => 'INTERNAL_USE_OUT',
             'qty_out' => 3,
         ]);
-        $this->assertDatabaseHas('stock_movements', [
-            'product_id' => $product->id,
-            'stock_item_id' => null,
-            'movement_type' => 'INTERNAL_USE_RETURN',
-            'qty_in' => 2,
-        ]);
     }
 
-    public function test_cannot_return_more_non_serialized_qty_than_issued(): void
+    public function test_non_serialized_non_consumable_item_can_return_to_stock(): void
     {
         $admin = User::factory()->admin()->create();
         $supplier = Supplier::factory()->create();
@@ -188,9 +171,67 @@ class InternalStockMovementApiTest extends TestCase
             'movement_date' => now()->toDateString(),
             'lines' => [[
                 'product_id' => $product->id,
-                'qty' => 2,
+                'qty' => 1,
+            ]],
+        ])->assertOk();
+
+        $this->assertDatabaseHas('stock_movements', [
+            'product_id' => $product->id,
+            'stock_item_id' => null,
+            'movement_type' => 'INTERNAL_USE_RETURN',
+            'qty_in' => 1,
+        ]);
+    }
+
+    public function test_non_serialized_consumable_item_cannot_return_to_stock(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'product_code' => 'CON-SHOW-001',
+            'product_type' => 'CONSUMABLE',
+            'requires_serial_number' => false,
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-INT-CON-001',
+            'stock_in_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'received_qty' => 2,
+            ]],
+        ])->assertCreated();
+
+        $issue = $this->postJson('/api/internal-stock-movements', [
+            'movement_number' => 'INT-OUT-CON-001',
+            'movement_date' => now()->toDateString(),
+            'purpose' => 'SHOWROOM',
+            'lines' => [[
+                'product_id' => $product->id,
+                'qty' => 1,
+            ]],
+        ])->assertCreated();
+
+        $movementId = (int) $issue->json('data.id');
+
+        $response = $this->patchJson('/api/internal-stock-movements/'.$movementId.'/return', [
+            'movement_number' => 'INT-RET-CON-001',
+            'movement_date' => now()->toDateString(),
+            'lines' => [[
+                'product_id' => $product->id,
+                'qty' => 1,
             ]],
         ])->assertUnprocessable();
+
+        $response->assertJsonValidationErrors(['lines']);
+        $this->assertDatabaseMissing('stock_movements', [
+            'product_id' => $product->id,
+            'stock_item_id' => null,
+            'movement_type' => 'INTERNAL_USE_RETURN',
+        ]);
     }
 
     /**

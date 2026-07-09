@@ -11,6 +11,7 @@ class EloquentReturnToSupplierRepository implements ReturnToSupplierRepository
     private const DETAIL_RELATIONS = [
         'supplier',
         'stockIn',
+        'createdByUser',
         'lines.product',
         'lines.stockItem.product',
         'lines.stockInLine.product',

@@ -46,4 +46,9 @@ class ReturnToSupplier extends Model
     {
         return $this->belongsTo(Supplier::class);
     }
+
+    public function createdByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
 }
