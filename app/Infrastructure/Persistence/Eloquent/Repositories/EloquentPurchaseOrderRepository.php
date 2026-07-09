@@ -10,7 +10,11 @@ class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
 {
     public function paginate(int $perPage = 15): LengthAwarePaginator
     {
-        return PurchaseOrder::query()->with('lines.product')->latest('id')->paginate($perPage);
+        return PurchaseOrder::query()
+            ->with('lines.product')
+            ->orderByDesc('po_date')
+            ->orderByDesc('po_number')
+            ->paginate($perPage);
     }
 
     public function findOrFail(int $id): PurchaseOrder

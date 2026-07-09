@@ -321,7 +321,8 @@ class PurchaseOrderController extends Controller
                 'po.status',
                 'po.remarks',
             )
-            ->orderByDesc('po.id');
+            ->orderByDesc('po.po_date')
+            ->orderByDesc('po.po_number');
 
         $search = trim((string) ($filters['q'] ?? ''));
         if ($search !== '') {
