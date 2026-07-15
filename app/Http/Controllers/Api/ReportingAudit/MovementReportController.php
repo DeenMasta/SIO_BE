@@ -62,6 +62,10 @@ class MovementReportController extends Controller
         $headers = [
             'id',
             'movement_datetime',
+            'product_code',
+            'product_name',
+            'serial_number',
+            'delivered_customer_name',
             'product_id',
             'stock_item_id',
             'movement_type',

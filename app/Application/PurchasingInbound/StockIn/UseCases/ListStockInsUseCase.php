@@ -14,8 +14,9 @@ class ListStockInsUseCase implements UseCase
 
     public function execute(mixed $payload = null): LengthAwarePaginator
     {
-        $perPage = is_array($payload) ? (int) ($payload['per_page'] ?? 15) : 15;
+        $filters = is_array($payload) ? $payload : [];
+        $perPage = (int) ($filters['per_page'] ?? 15);
 
-        return $this->stockIns->paginate($perPage > 0 ? $perPage : 15);
+        return $this->stockIns->paginate($perPage > 0 ? $perPage : 15, $filters);
     }
 }

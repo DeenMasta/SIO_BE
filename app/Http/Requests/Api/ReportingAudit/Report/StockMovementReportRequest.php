@@ -20,9 +20,9 @@ class StockMovementReportRequest extends StrictFormRequest
     {
         return [
             'page' => ['nullable', 'integer', 'min:1'],
+            'q' => ['nullable', 'string', 'max:100'],
             'movement_type' => ['nullable', Rule::enum(MovementType::class)],
             'product_id' => ['nullable', 'integer', 'exists:products,id'],
-            'stock_item_id' => ['nullable', 'integer', 'exists:stock_items,id'],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:200'],
@@ -34,9 +34,9 @@ class StockMovementReportRequest extends StrictFormRequest
     {
         return [
             'page',
+            'q',
             'movement_type',
             'product_id',
-            'stock_item_id',
             'date_from',
             'date_to',
             'per_page',

@@ -41,6 +41,7 @@ class StockInController extends Controller
 
         $stockIns = $this->listStockIns->execute([
             'per_page' => (int) $request->integer('per_page', 15),
+            'q' => trim((string) $request->query('q', '')),
         ]);
 
         return ApiResponse::success(
@@ -192,7 +193,24 @@ class StockInController extends Controller
                 $searchQuery->where('si.stock_in_number', 'like', '%'.$search.'%')
                     ->orWhere('s.supplier_code', 'like', '%'.$search.'%')
                     ->orWhere('s.supplier_name', 'like', '%'.$search.'%')
-                    ->orWhere('po.po_number', 'like', '%'.$search.'%');
+                    ->orWhere('po.po_number', 'like', '%'.$search.'%')
+                    ->orWhereExists(function ($productQuery) use ($search): void {
+                        $productQuery->selectRaw('1')
+                            ->from('stock_in_lines as sil_search')
+                            ->join('products as p', 'p.id', '=', 'sil_search.product_id')
+                            ->whereColumn('sil_search.stock_in_id', 'si.id')
+                            ->where(function ($innerQuery) use ($search): void {
+                                $innerQuery->where('p.product_code', 'like', '%'.$search.'%')
+                                    ->orWhere('p.product_name', 'like', '%'.$search.'%');
+                            });
+                    })
+                    ->orWhereExists(function ($serialQuery) use ($search): void {
+                        $serialQuery->selectRaw('1')
+                            ->from('stock_in_lines as sil_serial')
+                            ->join('stock_items as sti', 'sti.stock_in_line_id', '=', 'sil_serial.id')
+                            ->whereColumn('sil_serial.stock_in_id', 'si.id')
+                            ->where('sti.serial_number', 'like', '%'.$search.'%');
+                    });
             });
         }
 

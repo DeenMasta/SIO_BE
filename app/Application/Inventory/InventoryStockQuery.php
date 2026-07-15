@@ -75,7 +75,13 @@ final class InventoryStockQuery
                     ->orWhere('p.product_name', 'like', '%'.$search.'%')
                     ->orWhere('p.product_model', 'like', '%'.$search.'%')
                     ->orWhere('s.supplier_code', 'like', '%'.$search.'%')
-                    ->orWhere('s.supplier_name', 'like', '%'.$search.'%');
+                    ->orWhere('s.supplier_name', 'like', '%'.$search.'%')
+                    ->orWhereExists(function ($serialQuery) use ($search): void {
+                        $serialQuery->selectRaw('1')
+                            ->from('stock_items as si')
+                            ->whereColumn('si.product_id', 'p.id')
+                            ->where('si.serial_number', 'like', '%'.$search.'%');
+                    });
             });
         }
 
