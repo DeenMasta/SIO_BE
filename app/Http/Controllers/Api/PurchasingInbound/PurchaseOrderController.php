@@ -212,10 +212,23 @@ class PurchaseOrderController extends Controller
     {
         $this->authorize('create', PurchaseOrder::class);
 
+        $purchaseOrder->loadMissing('lines');
+
+        $isFulfilled = $purchaseOrder->lines->isNotEmpty()
+            && $purchaseOrder->lines->every(
+                static fn ($line): bool => (int) $line->received_qty >= (int) $line->ordered_qty,
+            );
+
+        if (! $isFulfilled) {
+            throw ValidationException::withMessages([
+                'status' => ['Purchase order can only complete after all ordered quantities are fully received.'],
+            ]);
+        }
+
         $updated = $this->transitionStatus(
             $purchaseOrder,
             PurchaseOrderStatus::Completed,
-            [PurchaseOrderStatus::Issued],
+            [PurchaseOrderStatus::Issued, PurchaseOrderStatus::Partial],
             'complete',
             (int) $request->user()->id,
             AuditAction::Update,
@@ -231,7 +244,7 @@ class PurchaseOrderController extends Controller
         $updated = $this->transitionStatus(
             $purchaseOrder,
             PurchaseOrderStatus::Cancelled,
-            [PurchaseOrderStatus::Draft, PurchaseOrderStatus::Issued],
+            [PurchaseOrderStatus::Draft, PurchaseOrderStatus::Issued, PurchaseOrderStatus::Partial],
             'cancel',
             (int) $request->user()->id,
             AuditAction::Cancel,

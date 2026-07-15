@@ -156,9 +156,13 @@ class DeleteObsoleteNonSerializedStockInLinesUseCase implements UseCase
                         static fn (PurchaseOrderLine $line): bool => (int) $line->received_qty >= (int) $line->ordered_qty,
                     );
 
+                $hasAnyReceipt = $purchaseOrder->lines->contains(
+                    static fn (PurchaseOrderLine $line): bool => (int) $line->received_qty > 0,
+                );
+
                 $purchaseOrder->status = $isCompleted
                     ? PurchaseOrderStatus::Completed
-                    : PurchaseOrderStatus::Issued;
+                    : ($hasAnyReceipt ? PurchaseOrderStatus::Partial : PurchaseOrderStatus::Issued);
                 $purchaseOrder->save();
             }
 

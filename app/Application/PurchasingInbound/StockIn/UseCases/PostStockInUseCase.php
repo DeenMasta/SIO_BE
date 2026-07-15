@@ -56,9 +56,9 @@ class PostStockInUseCase implements UseCase
                     ]);
                 }
 
-                if ($purchaseOrder->status !== PurchaseOrderStatus::Issued) {
+                if (! in_array($purchaseOrder->status, [PurchaseOrderStatus::Issued, PurchaseOrderStatus::Partial], true)) {
                     throw ValidationException::withMessages([
-                        'purchase_order_id' => ['Stock in can only be received from an issued purchase order.'],
+                        'purchase_order_id' => ['Stock in can only be received from an issued or partial purchase order.'],
                     ]);
                 }
 
@@ -174,8 +174,8 @@ class PostStockInUseCase implements UseCase
                 $purchaseOrder->refresh()->load('lines.product');
             }
 
-            if ($purchaseOrder !== null && $this->isPurchaseOrderFulfilled($purchaseOrder)) {
-                $purchaseOrder->status = PurchaseOrderStatus::Completed;
+            if ($purchaseOrder !== null) {
+                $purchaseOrder->status = $this->resolvePurchaseOrderStatusAfterReceipt($purchaseOrder);
                 $purchaseOrder->save();
             }
 
@@ -350,6 +350,21 @@ class PostStockInUseCase implements UseCase
         return $purchaseOrder->lines->every(function (PurchaseOrderLine $line): bool {
             return (int) $line->received_qty >= (int) $line->ordered_qty;
         });
+    }
+
+    private function resolvePurchaseOrderStatusAfterReceipt(PurchaseOrder $purchaseOrder): PurchaseOrderStatus
+    {
+        if ($this->isPurchaseOrderFulfilled($purchaseOrder)) {
+            return PurchaseOrderStatus::Completed;
+        }
+
+        $hasAnyReceipt = $purchaseOrder->lines->contains(function (PurchaseOrderLine $line): bool {
+            return (int) $line->received_qty > 0;
+        });
+
+        return $hasAnyReceipt
+            ? PurchaseOrderStatus::Partial
+            : PurchaseOrderStatus::Issued;
     }
 
     /**

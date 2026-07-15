@@ -100,7 +100,20 @@ class PurchasingInboundApiTest extends TestCase
     public function test_purchase_order_transitions_support_valid_paths_and_write_audit_logs(): void
     {
         $admin = User::factory()->admin()->create();
-        $purchaseOrder = PurchaseOrder::factory()->create(['status' => 'DRAFT']);
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+        $purchaseOrder = PurchaseOrder::factory()->create([
+            'supplier_id' => $supplier->id,
+            'status' => 'DRAFT',
+        ]);
+        PurchaseOrderLine::query()->create([
+            'purchase_order_id' => $purchaseOrder->id,
+            'product_id' => $product->id,
+            'ordered_qty' => 3,
+            'received_qty' => 3,
+            'unit_price' => 2,
+            'subtotal' => 6,
+        ]);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -123,6 +136,32 @@ class PurchasingInboundApiTest extends TestCase
     {
         $admin = User::factory()->admin()->create();
         $purchaseOrder = PurchaseOrder::factory()->create(['status' => 'DRAFT']);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->patchJson('/api/purchase-orders/'.$purchaseOrder->id.'/complete')
+            ->assertUnprocessable()
+            ->assertJsonPath('status', 'error');
+    }
+
+    public function test_purchase_order_cannot_be_manually_completed_before_all_quantities_are_received(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+        $purchaseOrder = PurchaseOrder::factory()->create([
+            'supplier_id' => $supplier->id,
+            'status' => 'ISSUED',
+        ]);
+
+        PurchaseOrderLine::query()->create([
+            'purchase_order_id' => $purchaseOrder->id,
+            'product_id' => $product->id,
+            'ordered_qty' => 5,
+            'received_qty' => 2,
+            'unit_price' => 3,
+            'subtotal' => 15,
+        ]);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -306,7 +345,7 @@ class PurchasingInboundApiTest extends TestCase
         ]);
         $this->assertDatabaseHas('purchase_orders', [
             'id' => $poId,
-            'status' => 'ISSUED',
+            'status' => 'PARTIAL',
         ]);
 
         $this->postJson('/api/stock-ins', [

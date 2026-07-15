@@ -117,7 +117,7 @@ class ReportPackController extends Controller
     public function poOpen(ReportPackRequest $request): JsonResponse
     {
         $records = $this->purchaseOrderBaseQuery($request->validated())
-            ->whereIn('status', ['DRAFT', 'ISSUED'])
+            ->whereIn('status', ['DRAFT', 'ISSUED', 'PARTIAL'])
             ->paginate((int) $request->integer('per_page', 15));
 
         return $this->paginatedResponse($records, 'Open purchase order report retrieved successfully.');
@@ -126,7 +126,7 @@ class ReportPackController extends Controller
     public function poAging(ReportPackRequest $request): JsonResponse
     {
         $records = $this->purchaseOrderBaseQuery($request->validated())
-            ->whereIn('status', ['DRAFT', 'ISSUED'])
+            ->whereIn('status', ['DRAFT', 'ISSUED', 'PARTIAL'])
             ->orderBy('po_date')
             ->paginate((int) $request->integer('per_page', 15));
 

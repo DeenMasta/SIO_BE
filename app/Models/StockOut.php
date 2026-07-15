@@ -46,6 +46,11 @@ class StockOut extends Model
         return $this->belongsTo(SaleOrder::class);
     }
 
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
+    }
+
     public function quickStockOut(): BelongsTo
     {
         return $this->belongsTo(QuickStockOut::class);

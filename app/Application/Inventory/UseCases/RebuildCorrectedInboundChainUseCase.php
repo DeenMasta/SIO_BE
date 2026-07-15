@@ -292,7 +292,7 @@ class RebuildCorrectedInboundChainUseCase implements UseCase
             'expected_delivery_date' => $expectedDeliveryDate,
             'status' => (int) $oldPurchaseOrderLine->received_qty >= (int) $oldPurchaseOrderLine->ordered_qty
                 ? PurchaseOrderStatus::Completed
-                : PurchaseOrderStatus::Issued,
+                : ((int) $oldPurchaseOrderLine->received_qty > 0 ? PurchaseOrderStatus::Partial : PurchaseOrderStatus::Issued),
             'created_by' => (int) $oldPurchaseOrder->created_by,
             'remarks' => $oldPurchaseOrder->remarks,
         ]);

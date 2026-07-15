@@ -46,6 +46,7 @@ class StockOutController extends Controller
 
         $records = $this->listStockOuts->execute([
             'per_page' => (int) $request->integer('per_page', 15),
+            'q' => trim((string) $request->query('q', '')),
         ]);
 
         return ApiResponse::success(
@@ -227,7 +228,25 @@ class StockOutController extends Controller
                 $searchQuery->where('so.stock_out_number', 'like', '%'.$search.'%')
                     ->orWhere('sale.so_number', 'like', '%'.$search.'%')
                     ->orWhere('c.customer_name', 'like', '%'.$search.'%')
-                    ->orWhere('so.invoice_number', 'like', '%'.$search.'%');
+                    ->orWhere('so.invoice_number', 'like', '%'.$search.'%')
+                    ->orWhereExists(function ($productQuery) use ($search): void {
+                        $productQuery->selectRaw('1')
+                            ->from('stock_out_lines as sol_search')
+                            ->join('products as p', 'p.id', '=', 'sol_search.product_id')
+                            ->whereColumn('sol_search.stock_out_id', 'so.id')
+                            ->where(function ($innerQuery) use ($search): void {
+                                $innerQuery->where('p.product_code', 'like', '%'.$search.'%')
+                                    ->orWhere('p.product_name', 'like', '%'.$search.'%');
+                            });
+                    })
+                    ->orWhereExists(function ($serialQuery) use ($search): void {
+                        $serialQuery->selectRaw('1')
+                            ->from('stock_out_lines as sol_serial')
+                            ->join('stock_out_line_items as soli', 'soli.stock_out_line_id', '=', 'sol_serial.id')
+                            ->join('stock_items as si', 'si.id', '=', 'soli.stock_item_id')
+                            ->whereColumn('sol_serial.stock_out_id', 'so.id')
+                            ->where('si.serial_number', 'like', '%'.$search.'%');
+                    });
             });
         }
 

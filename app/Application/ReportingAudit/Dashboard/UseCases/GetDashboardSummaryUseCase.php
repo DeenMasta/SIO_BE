@@ -51,9 +51,9 @@ class GetDashboardSummaryUseCase implements UseCase
 
         $lowStockCount = $this->lowStockAlertService->lowStockCount();
 
-        $openPoCount = PurchaseOrder::query()->whereIn('status', ['DRAFT', 'ISSUED'])->count();
+        $openPoCount = PurchaseOrder::query()->whereIn('status', ['DRAFT', 'ISSUED', 'PARTIAL'])->count();
         $overduePoCount = PurchaseOrder::query()
-            ->whereIn('status', ['DRAFT', 'ISSUED'])
+            ->whereIn('status', ['DRAFT', 'ISSUED', 'PARTIAL'])
             ->whereDate('expected_delivery_date', '<', today())
             ->count();
 

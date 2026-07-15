@@ -21,9 +21,9 @@ class UpdatePurchaseOrderUseCase implements UseCase
 
         $purchaseOrder = $this->purchaseOrders->findOrFail($id);
 
-        if (! in_array($purchaseOrder->status, [PurchaseOrderStatus::Draft, PurchaseOrderStatus::Issued], true)) {
+        if (! in_array($purchaseOrder->status, [PurchaseOrderStatus::Draft, PurchaseOrderStatus::Issued, PurchaseOrderStatus::Partial], true)) {
             throw ValidationException::withMessages([
-                'status' => ['Only DRAFT or ISSUED purchase orders can be updated.'],
+                'status' => ['Only DRAFT, ISSUED, or PARTIAL purchase orders can be updated.'],
             ]);
         }
 
