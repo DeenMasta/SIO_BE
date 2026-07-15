@@ -916,4 +916,103 @@ class PurchasingInboundApiTest extends TestCase
         $this->assertStringContainsString('SIN-QC-EXPORT', $content);
         $this->assertStringContainsString($admin->name, $content);
     }
+
+    public function test_multiple_users_can_qc_the_same_stock_in_in_separate_batches(): void
+    {
+        $firstQcUser = User::factory()->staff()->create();
+        $secondQcUser = User::factory()->staff()->create();
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'product_type' => 'DEVICE',
+            'requires_serial_number' => true,
+        ]);
+
+        Sanctum::actingAs($firstQcUser, ['staff-access']);
+
+        $stockIn = $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-QC-MULTI-001',
+            'stock_in_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'received_qty' => 3,
+                'serial_numbers' => ['QC-MULTI-0001', 'QC-MULTI-0002', 'QC-MULTI-0003'],
+            ]],
+        ])->assertCreated();
+
+        $stockInId = (int) $stockIn->json('data.id');
+        $stockItems = StockItem::query()->orderBy('id')->get();
+
+        $this->postJson('/api/qc-documents', [
+            'document_number' => 'QC-MULTI-001-A',
+            'stock_in_id' => $stockInId,
+            'date' => now()->toDateString(),
+            'lines' => [
+                [
+                    'stock_item_id' => (int) $stockItems[0]->id,
+                    'result' => 'PASSED',
+                    'checked_conditions' => [],
+                    'checked_accessories' => [],
+                ],
+                [
+                    'stock_item_id' => (int) $stockItems[1]->id,
+                    'result' => 'FAILED',
+                    'checked_conditions' => [],
+                    'checked_accessories' => [],
+                    'remarks' => 'Battery issue',
+                ],
+            ],
+        ])->assertCreated()
+            ->assertJsonPath('data.pic_id', $firstQcUser->id);
+
+        Sanctum::actingAs($secondQcUser, ['staff-access']);
+
+        $this->postJson('/api/qc-documents', [
+            'document_number' => 'QC-MULTI-001-B',
+            'stock_in_id' => $stockInId,
+            'date' => now()->toDateString(),
+            'lines' => [[
+                'stock_item_id' => (int) $stockItems[2]->id,
+                'result' => 'PASSED',
+                'checked_conditions' => [],
+                'checked_accessories' => [],
+            ]],
+        ])->assertCreated()
+            ->assertJsonPath('data.pic_id', $secondQcUser->id);
+
+        $this->assertDatabaseCount('quality_checks', 2);
+        $this->assertDatabaseHas('quality_checks', [
+            'document_number' => 'QC-MULTI-001-A',
+            'stock_in_id' => $stockInId,
+            'pic_id' => $firstQcUser->id,
+        ]);
+        $this->assertDatabaseHas('quality_checks', [
+            'document_number' => 'QC-MULTI-001-B',
+            'stock_in_id' => $stockInId,
+            'pic_id' => $secondQcUser->id,
+        ]);
+
+        $pendingResponse = $this->getJson('/api/stock-ins/'.$stockInId.'/pending-qc-items')
+            ->assertOk()
+            ->assertJsonPath('meta.qc_summary.total_items', 3)
+            ->assertJsonPath('meta.qc_summary.pending_items', 0)
+            ->assertJsonPath('meta.qc_summary.passed_items', 2)
+            ->assertJsonPath('meta.qc_summary.failed_items', 1)
+            ->assertJsonPath('meta.qc_summary.partial_items', 0)
+            ->assertJsonPath('meta.qc_summary.qc_documents_count', 2)
+            ->assertJsonPath('meta.qc_summary.qc_completion_status', 'COMPLETED');
+
+        $this->assertCount(0, $pendingResponse->json('data'));
+        $this->assertCount(2, $pendingResponse->json('meta.qc_history'));
+
+        $this->getJson('/api/qc-documents?stock_in_id='.$stockInId)
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 2);
+
+        $this->getJson('/api/stock-ins/'.$stockInId)
+            ->assertOk()
+            ->assertJsonPath('data.qc_summary.total_items', 3)
+            ->assertJsonPath('data.qc_summary.pending_items', 0)
+            ->assertJsonPath('data.qc_summary.qc_completion_status', 'COMPLETED');
+    }
 }

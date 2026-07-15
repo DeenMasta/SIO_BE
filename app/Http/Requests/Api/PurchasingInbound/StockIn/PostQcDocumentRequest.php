@@ -18,7 +18,7 @@ class PostQcDocumentRequest extends StrictFormRequest
     {
         return [
             'document_number' => ['nullable', 'string', 'max:50', 'alpha_dash', 'unique:quality_checks,document_number'],
-            'stock_in_id'     => ['required', 'integer', 'exists:stock_in,id', 'unique:quality_checks,stock_in_id'],
+            'stock_in_id'     => ['required', 'integer', 'exists:stock_in,id'],
             'date'            => ['required', 'date'],
             'remarks'         => ['nullable', 'string', 'max:2000'],
             'lines'           => ['required', 'array', 'min:1'],

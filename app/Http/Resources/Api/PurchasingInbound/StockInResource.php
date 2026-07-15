@@ -3,6 +3,7 @@
 namespace App\Http\Resources\Api\PurchasingInbound;
 
 use App\Domain\ExceptionsReturns\Enums\ExceptionTransactionStatus;
+use App\Domain\InventoryCore\Enums\StockItemQcStatus;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -14,6 +15,14 @@ class StockInResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $serializedItems = $this->lines
+            ->flatMap(fn ($line) => $line->stockItems)
+            ->values();
+
+        $pendingQcCount = $serializedItems
+            ->filter(fn ($item) => $item->qc_status === StockItemQcStatus::Pending)
+            ->count();
+
         return [
             'id' => $this->id,
             'stock_in_number' => $this->stock_in_number,
@@ -25,6 +34,18 @@ class StockInResource extends JsonResource
             'status' => $this->status?->value === 'POSTED'
                 ? 'RECEIVED'
                 : $this->status?->value,
+            'qc_summary' => [
+                'total_items' => $serializedItems->count(),
+                'pending_items' => $pendingQcCount,
+                'passed_items' => $serializedItems->filter(fn ($item) => $item->qc_status === StockItemQcStatus::Passed)->count(),
+                'failed_items' => $serializedItems->filter(fn ($item) => $item->qc_status === StockItemQcStatus::Failed)->count(),
+                'partial_items' => $serializedItems->filter(fn ($item) => $item->qc_status === StockItemQcStatus::Partial)->count(),
+                'qc_completion_status' => $serializedItems->isEmpty()
+                    ? 'NOT_REQUIRED'
+                    : ($pendingQcCount === $serializedItems->count()
+                        ? 'NOT_STARTED'
+                        : ($pendingQcCount === 0 ? 'COMPLETED' : 'IN_PROGRESS')),
+            ],
             'remarks' => $this->remarks,
             'lines' => $this->lines->map(function ($line): array {
                 $postedReturnedQty = $line->returnToSupplierLines

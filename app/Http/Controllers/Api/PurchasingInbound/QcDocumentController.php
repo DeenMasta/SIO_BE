@@ -46,6 +46,7 @@ class QcDocumentController extends Controller
         // For now, no strict policy enforcement on list
         $documents = $this->listQcDocuments->execute([
             'per_page' => (int) $request->integer('per_page', 15),
+            'stock_in_id' => (int) $request->integer('stock_in_id', 0),
         ]);
 
         return ApiResponse::success(

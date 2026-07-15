@@ -10,6 +10,7 @@ use App\Application\Support\DocumentNumberGenerator;
 use App\Application\Support\AuditLogger;
 use App\Application\ReportingAudit\Reports\Services\ExportService;
 use App\Domain\InventoryCore\Enums\StockItemQcStatus;
+use App\Models\QcDocument;
 use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\PurchasingInbound\StockIn\ExportStockInRequest;
@@ -153,7 +154,49 @@ class StockInController extends Controller
                 ->toArray(),
         ]);
 
-        return ApiResponse::success($mapped, 'Pending QC items for stock-in retrieved successfully.');
+        $allSerializedItems = StockItem::query()
+            ->whereHas('stockInLine', fn ($query) => $query->where('stock_in_id', $id))
+            ->get(['id', 'qc_status']);
+
+        $qcDocuments = QcDocument::query()
+            ->where('stock_in_id', $id)
+            ->with('pic')
+            ->withCount('checks')
+            ->latest('id')
+            ->get(['id', 'document_number', 'date', 'pic_id', 'stock_in_id', 'status', 'remarks', 'created_at']);
+
+        return ApiResponse::success(
+            $mapped,
+            'Pending QC items for stock-in retrieved successfully.',
+            meta: [
+                'qc_summary' => [
+                    'total_items' => $allSerializedItems->count(),
+                    'pending_items' => $allSerializedItems->where('qc_status', StockItemQcStatus::Pending)->count(),
+                    'passed_items' => $allSerializedItems->where('qc_status', StockItemQcStatus::Passed)->count(),
+                    'failed_items' => $allSerializedItems->where('qc_status', StockItemQcStatus::Failed)->count(),
+                    'partial_items' => $allSerializedItems->where('qc_status', StockItemQcStatus::Partial)->count(),
+                    'qc_documents_count' => $qcDocuments->count(),
+                    'qc_completion_status' => $allSerializedItems->isEmpty()
+                        ? 'NOT_REQUIRED'
+                        : ($allSerializedItems->where('qc_status', StockItemQcStatus::Pending)->count() === $allSerializedItems->count()
+                            ? 'NOT_STARTED'
+                            : ($allSerializedItems->where('qc_status', StockItemQcStatus::Pending)->isEmpty()
+                                ? 'COMPLETED'
+                                : 'IN_PROGRESS')),
+                ],
+                'qc_history' => $qcDocuments->map(fn (QcDocument $document): array => [
+                    'id' => $document->id,
+                    'document_number' => $document->document_number,
+                    'date' => $document->date?->format('Y-m-d'),
+                    'pic_id' => $document->pic_id,
+                    'pic_name' => $document->pic?->name,
+                    'status' => $document->status,
+                    'checks_count' => $document->checks_count,
+                    'remarks' => $document->remarks,
+                    'created_at' => $document->created_at,
+                ])->values()->all(),
+            ],
+        );
     }
 
     /**

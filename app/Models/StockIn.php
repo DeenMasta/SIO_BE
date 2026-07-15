@@ -46,4 +46,9 @@ class StockIn extends Model
     {
         return $this->belongsTo(PurchaseOrder::class);
     }
+
+    public function qcDocuments(): HasMany
+    {
+        return $this->hasMany(QcDocument::class);
+    }
 }
