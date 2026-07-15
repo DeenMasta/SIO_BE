@@ -6,12 +6,15 @@ use App\Application\Contracts\Repositories\StockOutRepository;
 use App\Models\StockOut;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Schema;
 
 class EloquentStockOutRepository implements StockOutRepository
 {
     public function paginate(int $perPage = 15, array $filters = []): LengthAwarePaginator
     {
         $search = trim((string) ($filters['q'] ?? ''));
+        $hasStockOutInvoiceNumber = Schema::hasColumn('stock_out', 'invoice_number');
+        $hasSaleOrderInvoiceNumber = Schema::hasColumn('sale_orders', 'invoice_number');
 
         return StockOut::query()
             ->with([
@@ -23,14 +26,18 @@ class EloquentStockOutRepository implements StockOutRepository
                 'lines.lineItems.stockItem',
                 'lines.lineItems.settledSaleOrderLine',
             ])
-            ->when($search !== '', function (Builder $query) use ($search): void {
-                $query->where(function (Builder $searchQuery) use ($search): void {
+            ->when($search !== '', function (Builder $query) use ($search, $hasStockOutInvoiceNumber, $hasSaleOrderInvoiceNumber): void {
+                $query->where(function (Builder $searchQuery) use ($search, $hasStockOutInvoiceNumber, $hasSaleOrderInvoiceNumber): void {
                     $searchQuery
                         ->where('stock_out_number', 'like', '%'.$search.'%')
-                        ->orWhere('invoice_number', 'like', '%'.$search.'%')
-                        ->orWhereHas('saleOrder', function (Builder $saleOrderQuery) use ($search): void {
-                            $saleOrderQuery->where('so_number', 'like', '%'.$search.'%')
-                                ->orWhere('invoice_number', 'like', '%'.$search.'%');
+                        ->orWhereHas('saleOrder', function (Builder $saleOrderQuery) use ($search, $hasSaleOrderInvoiceNumber): void {
+                            $saleOrderQuery->where(function (Builder $saleOrderSearchQuery) use ($search, $hasSaleOrderInvoiceNumber): void {
+                                $saleOrderSearchQuery->where('so_number', 'like', '%'.$search.'%');
+
+                                if ($hasSaleOrderInvoiceNumber) {
+                                    $saleOrderSearchQuery->orWhere('invoice_number', 'like', '%'.$search.'%');
+                                }
+                            });
                         })
                         ->orWhereHas('customer', function (Builder $customerQuery) use ($search): void {
                             $customerQuery->where('customer_name', 'like', '%'.$search.'%');
@@ -42,6 +49,10 @@ class EloquentStockOutRepository implements StockOutRepository
                         ->orWhereHas('lines.lineItems.stockItem', function (Builder $stockItemQuery) use ($search): void {
                             $stockItemQuery->where('serial_number', 'like', '%'.$search.'%');
                         });
+
+                    if ($hasStockOutInvoiceNumber) {
+                        $searchQuery->orWhere('invoice_number', 'like', '%'.$search.'%');
+                    }
                 });
             })
             ->latest('id')

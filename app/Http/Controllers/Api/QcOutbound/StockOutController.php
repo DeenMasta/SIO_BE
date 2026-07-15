@@ -25,6 +25,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class StockOutController extends Controller
@@ -224,11 +225,13 @@ class StockOutController extends Controller
 
         $search = trim((string) ($filters['q'] ?? ''));
         if ($search !== '') {
-            $query->where(function ($searchQuery) use ($search): void {
+            $hasStockOutInvoiceNumber = Schema::hasColumn('stock_out', 'invoice_number');
+            $hasSaleOrderInvoiceNumber = Schema::hasColumn('sale_orders', 'invoice_number');
+
+            $query->where(function ($searchQuery) use ($search, $hasStockOutInvoiceNumber, $hasSaleOrderInvoiceNumber): void {
                 $searchQuery->where('so.stock_out_number', 'like', '%'.$search.'%')
                     ->orWhere('sale.so_number', 'like', '%'.$search.'%')
                     ->orWhere('c.customer_name', 'like', '%'.$search.'%')
-                    ->orWhere('so.invoice_number', 'like', '%'.$search.'%')
                     ->orWhereExists(function ($productQuery) use ($search): void {
                         $productQuery->selectRaw('1')
                             ->from('stock_out_lines as sol_search')
@@ -247,6 +250,14 @@ class StockOutController extends Controller
                             ->whereColumn('sol_serial.stock_out_id', 'so.id')
                             ->where('si.serial_number', 'like', '%'.$search.'%');
                     });
+
+                if ($hasStockOutInvoiceNumber) {
+                    $searchQuery->orWhere('so.invoice_number', 'like', '%'.$search.'%');
+                }
+
+                if ($hasSaleOrderInvoiceNumber) {
+                    $searchQuery->orWhere('sale.invoice_number', 'like', '%'.$search.'%');
+                }
             });
         }
 
