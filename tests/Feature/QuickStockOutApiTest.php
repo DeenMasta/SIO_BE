@@ -32,6 +32,32 @@ class QuickStockOutApiTest extends TestCase
         DB::connection()->getPdo()->sqliteCreateFunction('GREATEST', static fn (...$values): int|float => max($values), -1);
     }
 
+    public function test_staff_can_create_a_customer_from_the_quick_stock_out_flow(): void
+    {
+        $staff = User::factory()->staff()->create();
+        Sanctum::actingAs($staff, ['staff-access']);
+
+        $this->postJson('/api/quick-stock-outs/customers', [
+            'customer_name' => 'Quick Stock Out Customer',
+            'contact_person' => 'Siti',
+            'phone' => '0123456789',
+            'email' => 'quick-stock-out@example.com',
+            'address' => 'Lot 10',
+            'status' => 'ACTIVE',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.customer_name', 'Quick Stock Out Customer');
+
+        $this->assertDatabaseHas('customers', [
+            'customer_name' => 'Quick Stock Out Customer',
+        ]);
+
+        $this->postJson('/api/customers', [
+            'customer_name' => 'Master Data Customer',
+            'status' => 'ACTIVE',
+        ])->assertForbidden();
+    }
+
     public function test_staff_can_post_quick_stock_out_by_scanned_serial_number(): void
     {
         $staff = User::factory()->staff()->create();

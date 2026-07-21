@@ -12,6 +12,7 @@ use App\Http\Requests\Api\MasterData\Customer\StoreCustomerRequest;
 use App\Http\Requests\Api\MasterData\Customer\UpdateCustomerRequest;
 use App\Http\Resources\Api\MasterData\CustomerResource;
 use App\Models\Customer;
+use App\Models\QuickStockOut;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -53,6 +54,15 @@ class CustomerController extends Controller
         $customer = $this->createCustomer->execute($request->validated());
 
         return ApiResponse::success(new CustomerResource($customer), 'Customer created successfully.', 201);
+    }
+
+    public function storeForQuickStockOut(StoreCustomerRequest $request): JsonResponse
+    {
+        $this->authorize('create', QuickStockOut::class);
+
+        $customer = $this->createCustomer->execute($request->validated());
+
+        return ApiResponse::success(new CustomerResource($customer), 'Customer created for quick stock out successfully.', 201);
     }
 
     public function show(Customer $customer): JsonResponse

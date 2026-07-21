@@ -54,6 +54,7 @@ class SprintCSerialTracabilityTest extends TestCase
         $this->assertEquals($productId, $data['product']['id']);
         $this->assertNotEmpty($data['product']['product_code']);
         $this->assertEquals('DELIVERED', $data['current_status']); // After stock out, status is DELIVERED
+        $this->assertEquals($customerId, $data['current_customer']['id']);
 
         // Verify movements exist and are in chronological order
         $movements = $data['movements'];

@@ -50,6 +50,7 @@ class SearchController extends Controller
                     ->join('stock_out_lines', 'stock_out_lines.id', '=', 'stock_out_line_items.stock_out_line_id')
                     ->join('stock_out', 'stock_out.id', '=', 'stock_out_lines.stock_out_id')
                     ->select('stock_out.customer_id')
+                    ->whereRaw('stock_items.current_status = ?', ['DELIVERED'])
                     ->whereColumn('stock_out_line_items.stock_item_id', 'stock_items.id')
                     ->orderByDesc('stock_out.id')
                     ->limit(1);
@@ -60,6 +61,7 @@ class SearchController extends Controller
                     ->join('stock_out', 'stock_out.id', '=', 'stock_out_lines.stock_out_id')
                     ->join('customers', 'customers.id', '=', 'stock_out.customer_id')
                     ->select('customers.customer_name')
+                    ->whereRaw('stock_items.current_status = ?', ['DELIVERED'])
                     ->whereColumn('stock_out_line_items.stock_item_id', 'stock_items.id')
                     ->orderByDesc('stock_out.id')
                     ->limit(1);

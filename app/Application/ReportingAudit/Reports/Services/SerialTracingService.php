@@ -2,9 +2,10 @@
 
 namespace App\Application\ReportingAudit\Reports\Services;
 
-use App\Domain\InventoryCore\Enums\MovementType;
+use App\Domain\InventoryCore\Enums\StockItemStatus;
 use App\Models\StockItem;
 use App\Models\StockMovement;
+use App\Models\StockOutLineItem;
 use Illuminate\Support\Collection;
 
 /**
@@ -45,6 +46,18 @@ class SerialTracingService
             ->orderBy('movement_datetime', 'asc')
             ->get();
 
+        $currentCustomer = null;
+        if ($stockItem->current_status === StockItemStatus::Delivered) {
+            $currentCustomer = StockOutLineItem::query()
+                ->with('stockOutLine.stockOut.customer:id,customer_name')
+                ->where('stock_item_id', $stockItem->id)
+                ->latest('id')
+                ->first()
+                ?->stockOutLine
+                ?->stockOut
+                ?->customer;
+        }
+
         return [
             'serial_number' => $serialNumber,
             'product' => [
@@ -57,6 +70,10 @@ class SerialTracingService
             'qc_status' => $stockItem->qc_status?->value,
             'is_available' => $stockItem->is_available,
             'created_at' => $stockItem->created_at?->toIso8601String(),
+            'current_customer' => $currentCustomer ? [
+                'id' => $currentCustomer->id,
+                'customer_name' => $currentCustomer->customer_name,
+            ] : null,
             'movements' => $this->formatMovements($movements),
         ];
     }

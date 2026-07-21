@@ -78,6 +78,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::patch('sale-orders/{saleOrder}/cancel', [SaleOrderController::class, 'cancel']);
     Route::post('sale-orders/{saleOrder}/addon-lines', [SaleOrderController::class, 'addAddonLines']);
 
+    Route::post('quick-stock-outs/customers', [CustomerController::class, 'storeForQuickStockOut']);
     Route::apiResource('quick-stock-outs', QuickStockOutController::class)->only(['index', 'store']);
     Route::post('quick-stock-outs/{quickStockOut}/convert', [QuickStockOutController::class, 'convert']);
 
