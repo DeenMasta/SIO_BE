@@ -285,7 +285,7 @@ class StockOutExtraSettlementApiTest extends TestCase
         $this->assertDatabaseHas('stock_movements', [
             'product_id' => $extraSerializedProduct->id,
             'stock_item_id' => $serializedItemIds[1],
-            'movement_type' => 'FAILED_UPSELL_REVERSE',
+            'movement_type' => 'EXTRA_ITEM_RETURN',
             'from_status' => 'DELIVERED',
             'to_status' => 'IN_STOCK',
         ]);
@@ -293,7 +293,7 @@ class StockOutExtraSettlementApiTest extends TestCase
         $this->assertDatabaseHas('stock_movements', [
             'product_id' => $extraNonSerializedProduct->id,
             'stock_item_id' => null,
-            'movement_type' => 'FAILED_UPSELL_REVERSE',
+            'movement_type' => 'EXTRA_ITEM_RETURN',
             'qty_in' => 2,
             'from_status' => 'DELIVERED',
             'to_status' => 'IN_STOCK',

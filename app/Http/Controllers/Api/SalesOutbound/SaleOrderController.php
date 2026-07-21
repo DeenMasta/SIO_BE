@@ -103,7 +103,7 @@ class SaleOrderController extends Controller
         $this->authorize('view', $saleOrder);
 
         // Load lines, product, and dispatched items (with their stock items) to get serial numbers
-        $saleOrder->load(['lines.product', 'lines.dispatchedItems.stockItem']);
+        $saleOrder->load(['createdBy', 'lines.product', 'lines.dispatchedItems.stockItem']);
 
         return ApiResponse::success(new SaleOrderResource($saleOrder), 'Sales order retrieved successfully.');
     }

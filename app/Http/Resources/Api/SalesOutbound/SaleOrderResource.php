@@ -22,6 +22,13 @@ class SaleOrderResource extends JsonResource
             'invoice_number' => $this->invoice_number,
             'status' => $this->status?->value,
             'created_by' => $this->created_by,
+            'pic' => $this->whenLoaded('createdBy', fn (): ?array => $this->createdBy ? [
+                'id' => $this->createdBy->id,
+                'name' => $this->createdBy->name,
+                'email' => $this->createdBy->email,
+                'role' => $this->createdBy->role?->value,
+                'status' => $this->createdBy->status?->value,
+            ] : null),
             'remarks' => $this->remarks,
             'lines' => $this->lines->map(fn ($line): array => [
                 'id' => $line->id,

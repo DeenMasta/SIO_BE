@@ -19,6 +19,7 @@ class EloquentStockOutRepository implements StockOutRepository
         return StockOut::query()
             ->with([
                 'customer',
+                'pic',
                 'saleOrder',
                 'lines.product',
                 'lines.saleOrderLine',
@@ -63,6 +64,7 @@ class EloquentStockOutRepository implements StockOutRepository
     {
         return StockOut::query()
             ->with([
+                'pic',
                 'saleOrder',
                 'lines.product',
                 'lines.saleOrderLine',
@@ -77,6 +79,7 @@ class EloquentStockOutRepository implements StockOutRepository
     {
         return StockOut::query()
             ->with([
+                'pic',
                 'saleOrder',
                 'lines.product',
                 'lines.saleOrderLine',

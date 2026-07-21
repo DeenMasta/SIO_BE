@@ -95,7 +95,7 @@ class PurchaseOrderController extends Controller
     {
         $this->authorize('view', $purchaseOrder);
 
-        return ApiResponse::success(new PurchaseOrderResource($purchaseOrder->load('lines.product')), 'Purchase order retrieved successfully.');
+        return ApiResponse::success(new PurchaseOrderResource($purchaseOrder->load('lines.product', 'createdBy')), 'Purchase order retrieved successfully.');
     }
 
     public function update(UpdatePurchaseOrderRequest $request, PurchaseOrder $purchaseOrder): JsonResponse

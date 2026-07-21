@@ -67,6 +67,13 @@ class RepairResource extends JsonResource
                     'status' => $this->createdByUser->status?->value,
                 ];
             }),
+            'pic' => $this->whenLoaded('createdByUser', fn (): ?array => $this->createdByUser ? [
+                'id' => $this->createdByUser->id,
+                'name' => $this->createdByUser->name,
+                'email' => $this->createdByUser->email,
+                'role' => $this->createdByUser->role?->value,
+                'status' => $this->createdByUser->status?->value,
+            ] : null),
             'status_history' => $this->whenLoaded('statusHistory', function (): array {
                 return $this->statusHistory->map(function ($history): array {
                     return [

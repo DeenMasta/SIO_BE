@@ -34,6 +34,13 @@ class ReturnToSupplierResource extends JsonResource
                     'email' => $this->createdByUser->email,
                 ];
             }),
+            'pic' => $this->whenLoaded('createdByUser', fn (): ?array => $this->createdByUser ? [
+                'id' => $this->createdByUser->id,
+                'name' => $this->createdByUser->name,
+                'email' => $this->createdByUser->email,
+                'role' => $this->createdByUser->role?->value,
+                'status' => $this->createdByUser->status?->value,
+            ] : null),
             'lines' => $this->lines->map(fn ($line): array => [
                 'id' => $line->id,
                 'stock_in_line_id' => $line->stock_in_line_id,

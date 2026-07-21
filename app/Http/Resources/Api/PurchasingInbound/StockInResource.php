@@ -31,6 +31,13 @@ class StockInResource extends JsonResource
             'supplier_id' => $this->supplier_id,
             'supplier_name' => $this->supplier?->supplier_name,
             'stock_in_pic_id' => $this->stock_in_pic_id,
+            'pic' => $this->whenLoaded('pic', fn (): ?array => $this->pic ? [
+                'id' => $this->pic->id,
+                'name' => $this->pic->name,
+                'email' => $this->pic->email,
+                'role' => $this->pic->role?->value,
+                'status' => $this->pic->status?->value,
+            ] : null),
             'status' => $this->status?->value === 'POSTED'
                 ? 'RECEIVED'
                 : $this->status?->value,

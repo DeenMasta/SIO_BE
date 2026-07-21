@@ -55,4 +55,9 @@ class StockOut extends Model
     {
         return $this->belongsTo(QuickStockOut::class);
     }
+
+    public function pic(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'pic_id');
+    }
 }

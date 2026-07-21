@@ -97,7 +97,7 @@ class ReverseStockOutExtrasUseCase
                             'movement_datetime' => now(),
                             'product_id' => (int) $stockItem->product_id,
                             'stock_item_id' => (int) $stockItem->id,
-                            'movement_type' => MovementType::FailedUpsellReverse,
+                            'movement_type' => MovementType::ExtraItemReturn,
                             'reference_table' => 'stock_out_line_items',
                             'reference_id' => (int) $lineItem->id,
                             'qty_in' => 1,
@@ -107,7 +107,7 @@ class ReverseStockOutExtrasUseCase
                             'performed_by' => $performedBy,
                             'remarks' => $remarks !== ''
                                 ? $remarks
-                                : sprintf('Failed upsell reversed from stock out %s.', $lockedStockOut->stock_out_number),
+                                : sprintf('Extra return from stock out %s.', $lockedStockOut->stock_out_number),
                         ]);
                     }
 
@@ -133,7 +133,7 @@ class ReverseStockOutExtrasUseCase
                     'movement_datetime' => now(),
                     'product_id' => (int) $stockOutLine->product_id,
                     'stock_item_id' => null,
-                    'movement_type' => MovementType::FailedUpsellReverse,
+                    'movement_type' => MovementType::ExtraItemReturn,
                     'reference_table' => 'stock_out_lines',
                     'reference_id' => (int) $stockOutLine->id,
                     'qty_in' => $reverseQty,
@@ -143,7 +143,7 @@ class ReverseStockOutExtrasUseCase
                     'performed_by' => $performedBy,
                     'remarks' => $remarks !== ''
                         ? $remarks
-                        : sprintf('Failed upsell reversed from stock out %s.', $lockedStockOut->stock_out_number),
+                        : sprintf('Extra return from stock out %s.', $lockedStockOut->stock_out_number),
                 ]);
 
                 $stockOutLine->increment('reversed_qty', $reverseQty);

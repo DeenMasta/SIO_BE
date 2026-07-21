@@ -51,4 +51,9 @@ class StockIn extends Model
     {
         return $this->hasMany(QcDocument::class);
     }
+
+    public function pic(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'stock_in_pic_id');
+    }
 }

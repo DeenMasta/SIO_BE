@@ -20,5 +20,5 @@ enum MovementType: string
     case ReturnToSupplierCancelled = 'RETURN_TO_SUPPLIER_CANCELLED';
     case Adjustment = 'ADJUSTMENT';
     case QuickStockOut = 'QUICK_STOCK_OUT';
-    case FailedUpsellReverse = 'FAILED_UPSELL_REVERSE';
+    case ExtraItemReturn = 'EXTRA_ITEM_RETURN';
 }

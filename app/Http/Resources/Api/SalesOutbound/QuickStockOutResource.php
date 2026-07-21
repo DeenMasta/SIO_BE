@@ -26,6 +26,13 @@ class QuickStockOutResource extends JsonResource
             'remarks' => $this->remarks,
             'created_by' => $this->created_by,
             'creator' => $this->whenLoaded('createdBy'),
+            'pic' => $this->whenLoaded('createdBy', fn (): ?array => $this->createdBy ? [
+                'id' => $this->createdBy->id,
+                'name' => $this->createdBy->name,
+                'email' => $this->createdBy->email,
+                'role' => $this->createdBy->role?->value,
+                'status' => $this->createdBy->status?->value,
+            ] : null),
             'stock_out' => $this->whenLoaded('stockOut'),
             'sale_order' => $this->whenLoaded('convertedSaleOrder'),
             'lines' => QuickStockOutLineResource::collection($this->whenLoaded('lines')),

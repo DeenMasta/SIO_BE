@@ -33,6 +33,13 @@ class InternalStockMovementResource extends JsonResource
                     'status' => $this->createdByUser->status?->value,
                 ];
             }),
+            'pic' => $this->whenLoaded('createdByUser', fn (): ?array => $this->createdByUser ? [
+                'id' => $this->createdByUser->id,
+                'name' => $this->createdByUser->name,
+                'email' => $this->createdByUser->email,
+                'role' => $this->createdByUser->role?->value,
+                'status' => $this->createdByUser->status?->value,
+            ] : null),
             'lines' => $this->lines->map(fn ($line): array => [
                 'id' => $line->id,
                 'product_id' => $line->product_id,

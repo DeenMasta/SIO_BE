@@ -14,7 +14,7 @@ class EloquentStockInRepository implements StockInRepository
         $search = trim((string) ($filters['q'] ?? ''));
 
         return StockIn::query()
-            ->with('supplier', 'purchaseOrder', 'lines.product', 'lines.stockItems', 'lines.returnToSupplierLines.returnToSupplier')
+            ->with('supplier', 'purchaseOrder', 'pic', 'lines.product', 'lines.stockItems', 'lines.returnToSupplierLines.returnToSupplier')
             ->when($search !== '', function (Builder $query) use ($search): void {
                 $query->where(function (Builder $searchQuery) use ($search): void {
                     $searchQuery
@@ -42,7 +42,7 @@ class EloquentStockInRepository implements StockInRepository
     public function findOrFail(int $id): StockIn
     {
         return StockIn::query()
-            ->with('supplier', 'lines.product', 'lines.stockItems', 'lines.returnToSupplierLines.returnToSupplier')
+            ->with('supplier', 'pic', 'lines.product', 'lines.stockItems', 'lines.returnToSupplierLines.returnToSupplier')
             ->findOrFail($id);
     }
 }

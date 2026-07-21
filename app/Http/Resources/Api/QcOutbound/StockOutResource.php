@@ -23,6 +23,13 @@ class StockOutResource extends JsonResource
             'invoice_number' => $this->invoice_number,
             'pick_list_reference' => $this->pick_list_reference,
             'pic_id' => $this->pic_id,
+            'pic' => $this->whenLoaded('pic', fn (): ?array => $this->pic ? [
+                'id' => $this->pic->id,
+                'name' => $this->pic->name,
+                'email' => $this->pic->email,
+                'role' => $this->pic->role?->value,
+                'status' => $this->pic->status?->value,
+            ] : null),
             'status' => $this->status?->value,
             'remarks' => $this->remarks,
             'lines' => $this->lines->map(fn ($line): array => [
