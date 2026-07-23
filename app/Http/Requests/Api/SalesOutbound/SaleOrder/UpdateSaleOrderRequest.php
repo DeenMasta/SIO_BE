@@ -26,6 +26,7 @@ class UpdateSaleOrderRequest extends StrictFormRequest
             'invoice_number' => ['nullable', 'string', 'max:50'],
             'remarks' => ['nullable', 'string', 'max:2000'],
             'lines' => ['nullable', 'array', 'min:1'],
+            'lines.*.id' => ['nullable', 'integer', 'distinct'],
             'lines.*.product_id' => ['required_with:lines', 'integer', 'exists:products,id'],
             'lines.*.ordered_qty' => ['required_with:lines', 'integer', 'min:1'],
             'lines.*.is_free' => ['nullable', 'boolean'],

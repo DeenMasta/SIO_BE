@@ -4,6 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\Customer;
 use App\Models\Product;
+use App\Models\SaleOrderLine;
+use App\Models\StockOut;
+use App\Models\StockOutLine;
 use App\Models\StockMovement;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -319,6 +322,102 @@ class SalesOutboundApiTest extends TestCase
         $this->assertDatabaseHas('sale_order_lines', [
             'id' => $saleOrderLineId,
             'fulfilled_qty' => 5,
+        ]);
+    }
+
+    public function test_confirmed_sale_order_with_partial_stock_out_can_update_existing_line_without_deleting_it(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create([
+            'product_code' => 'PARTIAL-EDIT-1001',
+            'product_type' => 'CONSUMABLE',
+            'requires_serial_number' => false,
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        StockMovement::query()->create([
+            'movement_datetime' => now(),
+            'product_id' => $product->id,
+            'stock_item_id' => null,
+            'movement_type' => 'STOCK_IN',
+            'reference_table' => 'test_seed',
+            'reference_id' => 1201,
+            'qty_in' => 10,
+            'qty_out' => 0,
+            'to_status' => 'IN_STOCK',
+            'performed_by' => $admin->id,
+        ]);
+
+        $saleOrder = $this->postJson('/api/sale-orders', [
+            'so_number' => 'SO-PARTIAL-EDIT-001',
+            'so_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'invoice_number' => 'INV-PARTIAL-EDIT-001',
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 5,
+                'unit_price' => 10,
+            ]],
+        ])->assertCreated();
+
+        $saleOrderId = (int) $saleOrder->json('data.id');
+        $saleOrderLineId = (int) $saleOrder->json('data.lines.0.id');
+
+        $this->patchJson('/api/sale-orders/'.$saleOrderId.'/confirm')
+            ->assertOk()
+            ->assertJsonPath('data.status', 'CONFIRMED');
+
+        $stockOut = StockOut::query()->create([
+            'sale_order_id' => $saleOrderId,
+            'stock_out_number' => 'SOUT-PARTIAL-EDIT-001',
+            'idempotency_key' => 'idem-partial-edit-001',
+            'stock_out_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'invoice_number' => 'INV-STOCKOUT-PARTIAL-EDIT-001',
+            'pic_id' => $admin->id,
+            'status' => 'POSTED',
+        ]);
+
+        StockOutLine::query()->create([
+            'stock_out_id' => (int) $stockOut->id,
+            'sale_order_line_id' => $saleOrderLineId,
+            'product_id' => $product->id,
+            'qty' => 2,
+            'settled_qty' => 0,
+        ]);
+
+        SaleOrderLine::query()->whereKey($saleOrderLineId)->update(['fulfilled_qty' => 2]);
+
+        $this->assertDatabaseHas('stock_out_lines', [
+            'sale_order_line_id' => $saleOrderLineId,
+            'qty' => 2,
+        ]);
+
+        $this->patchJson('/api/sale-orders/'.$saleOrderId, [
+            'so_date' => now()->addDay()->toDateString(),
+            'customer_id' => $customer->id,
+            'invoice_number' => 'INV-PARTIAL-EDIT-001-REV',
+            'remarks' => 'Edited after partial stock out',
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 6,
+                'unit_price' => 12,
+            ]],
+        ])->assertOk()
+            ->assertJsonPath('data.status', 'CONFIRMED')
+            ->assertJsonPath('data.lines.0.id', $saleOrderLineId)
+            ->assertJsonPath('data.lines.0.ordered_qty', 6)
+            ->assertJsonPath('data.lines.0.fulfilled_qty', 2)
+            ->assertJsonPath('data.lines.0.unit_price', '12.00');
+
+        $this->assertDatabaseHas('sale_order_lines', [
+            'id' => $saleOrderLineId,
+            'ordered_qty' => 6,
+            'fulfilled_qty' => 2,
+            'unit_price' => 12,
+            'subtotal' => 72,
         ]);
     }
 

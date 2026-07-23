@@ -4,7 +4,9 @@ namespace App\Infrastructure\Persistence\Eloquent\Repositories;
 
 use App\Application\Contracts\Repositories\SaleOrderRepository;
 use App\Models\SaleOrder;
+use App\Models\StockOutLine;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Validation\ValidationException;
 
 class EloquentSaleOrderRepository implements SaleOrderRepository
 {
@@ -63,10 +65,7 @@ class EloquentSaleOrderRepository implements SaleOrderRepository
         $so->update($data);
 
         if ($lines !== null) {
-            $so->lines()->delete();
-            foreach ($lines as $line) {
-                $so->lines()->create($this->normalizeLine($line));
-            }
+            $this->syncLines($so, $lines);
         }
 
         return $so->fresh('lines.product');
@@ -101,5 +100,100 @@ class EloquentSaleOrderRepository implements SaleOrderRepository
         $line['fulfilled_qty'] = 0;
 
         return $line;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $lines
+     */
+    private function syncLines(SaleOrder $so, array $lines): void
+    {
+        $existingLines = $so->lines()->orderBy('id')->get();
+
+        if ($existingLines->isEmpty()) {
+            foreach ($lines as $line) {
+                $so->lines()->create($this->normalizeLine($line));
+            }
+
+            return;
+        }
+
+        $incoming = $lines;
+        $hasLineIds = collect($incoming)->contains(
+            fn (array $line): bool => array_key_exists('id', $line) && $line['id'] !== null
+        );
+
+        // Backward compatibility: when no IDs are provided but line counts match,
+        // map incoming lines by position so existing line identities are preserved.
+        if (! $hasLineIds && count($incoming) === $existingLines->count()) {
+            foreach ($incoming as $index => $line) {
+                $incoming[$index]['id'] = (int) $existingLines[$index]->id;
+            }
+        }
+
+        $existingById = $existingLines->keyBy('id');
+        $existingIds = $existingById->keys()->map(fn ($id): int => (int) $id)->all();
+
+        $referencedIds = StockOutLine::whereIn('sale_order_line_id', $existingIds, 'and', false)
+            ->pluck('sale_order_line_id')
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+        $referencedLookup = array_fill_keys($referencedIds, true);
+
+        $keptIds = [];
+
+        foreach ($incoming as $line) {
+            $lineId = isset($line['id']) ? (int) $line['id'] : null;
+
+            if ($lineId !== null) {
+                $existingLine = $existingById->get($lineId);
+
+                if (! $existingLine) {
+                    throw ValidationException::withMessages([
+                        'lines' => ['One or more line IDs do not belong to this sales order.'],
+                    ]);
+                }
+
+                $normalized = $this->normalizeLine($line);
+                $fulfilledQty = (int) $existingLine->fulfilled_qty;
+
+                if (($referencedLookup[$lineId] ?? false) && (int) $normalized['product_id'] !== (int) $existingLine->product_id) {
+                    throw ValidationException::withMessages([
+                        'lines' => ['Cannot change product on a line that already has stock-out transactions.'],
+                    ]);
+                }
+
+                if ((int) $normalized['ordered_qty'] < $fulfilledQty) {
+                    throw ValidationException::withMessages([
+                        'lines' => [sprintf('Ordered qty cannot be less than fulfilled qty (%d).', $fulfilledQty)],
+                    ]);
+                }
+
+                $normalized['fulfilled_qty'] = $fulfilledQty;
+                $existingLine->update($normalized);
+
+                $keptIds[] = $lineId;
+
+                continue;
+            }
+
+            $so->lines()->create($this->normalizeLine($line));
+        }
+
+        $idsToDelete = array_values(array_diff($existingIds, $keptIds));
+
+        if ($idsToDelete === []) {
+            return;
+        }
+
+        $blockedDeleteIds = array_values(array_intersect($idsToDelete, $referencedIds));
+        if ($blockedDeleteIds !== []) {
+            throw ValidationException::withMessages([
+                'lines' => ['Cannot remove sale order lines that already have stock-out transactions. Update existing lines instead.'],
+            ]);
+        }
+
+        $so->lines()->whereIn('id', $idsToDelete)->delete();
     }
 }
