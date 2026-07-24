@@ -9,6 +9,7 @@ use App\Models\StockInLine;
 use App\Models\StockItem;
 use App\Models\StockMovement;
 use App\Models\ReturnToSupplierLine;
+use App\Application\Support\StockBalanceUpdater;
 use Illuminate\Support\Facades\DB;
 
 class CorrectPoProduct extends Command
@@ -88,6 +89,10 @@ class CorrectPoProduct extends Command
                     }
                 }
             }
+
+            // 6. Recompute stock balances
+            app(StockBalanceUpdater::class)->recomputeForProducts([$oldProductId, $newProductId]);
+            $this->info("Recomputed stock balances for products {$oldProductId} and {$newProductId}.");
 
             DB::commit();
             $this->info("Successfully corrected product from ID {$oldProductId} to {$newProductId} for PO {$poNumber}.");
