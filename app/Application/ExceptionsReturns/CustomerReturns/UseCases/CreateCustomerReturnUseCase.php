@@ -167,6 +167,7 @@ class CreateCustomerReturnUseCase implements UseCase
     {
         return match ($nextAction) {
             CustomerReturnNextAction::Restock => StockItemStatus::InStock,
+            CustomerReturnNextAction::Repair => StockItemStatus::UnderRepair,
             CustomerReturnNextAction::Replace => StockItemStatus::Returned,
             CustomerReturnNextAction::Scrap => StockItemStatus::ReturnedToSupplier,
         };

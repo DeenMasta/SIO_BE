@@ -5,6 +5,7 @@ namespace App\Domain\ExceptionsReturns\Enums;
 enum CustomerReturnNextAction: string
 {
     case Restock = 'RESTOCK';
+    case Repair = 'REPAIR';
     case Replace = 'REPLACE';
     case Scrap = 'SCRAP';
 
