@@ -2,32 +2,33 @@
 
 use App\Application\Support\ApiResponse;
 use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\IdentityAccess\UserManagementController;
-use App\Http\Controllers\Api\Inventory\InventoryController;
-use App\Http\Controllers\Api\Inventory\InternalStockMovementController;
-use App\Http\Controllers\Api\Integrations\InvoiceInboxController;
-use App\Http\Controllers\Api\Integrations\TelegramInvoiceWebhookController;
-use App\Http\Controllers\Api\MasterData\CustomerController;
-use App\Http\Controllers\Api\NotificationController;
-use App\Http\Controllers\Api\MasterData\ProductController;
-use App\Http\Controllers\Api\MasterData\SupplierController;
-use App\Http\Controllers\Api\MasterData\PackageController;
-
-use App\Http\Controllers\Api\PurchasingInbound\PurchaseOrderController;
-use App\Http\Controllers\Api\PurchasingInbound\StockInController;
-use App\Http\Controllers\Api\PurchasingInbound\QcDocumentController;
-use App\Http\Controllers\Api\SalesOutbound\QuickStockOutController;
-use App\Http\Controllers\Api\SalesOutbound\SaleOrderController;
 use App\Http\Controllers\Api\ExceptionsReturns\CustomerReturnController;
 use App\Http\Controllers\Api\ExceptionsReturns\RepairController;
 use App\Http\Controllers\Api\ExceptionsReturns\ReturnToSupplierController;
+use App\Http\Controllers\Api\IdentityAccess\UserManagementController;
+use App\Http\Controllers\Api\Integrations\InvoiceInboxController;
+use App\Http\Controllers\Api\Integrations\TelegramInvoiceWebhookController;
+use App\Http\Controllers\Api\Inventory\InternalStockMovementController;
+use App\Http\Controllers\Api\Inventory\InventoryController;
+use App\Http\Controllers\Api\Inventory\MissingItemReportController;
+use App\Http\Controllers\Api\Inventory\StocktakeController;
+use App\Http\Controllers\Api\MasterData\CustomerController;
+use App\Http\Controllers\Api\MasterData\PackageController;
+use App\Http\Controllers\Api\MasterData\ProductController;
+use App\Http\Controllers\Api\MasterData\SupplierController;
+use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\PurchasingInbound\PurchaseOrderController;
+use App\Http\Controllers\Api\PurchasingInbound\QcDocumentController;
+use App\Http\Controllers\Api\PurchasingInbound\StockInController;
+use App\Http\Controllers\Api\QcOutbound\StockOutController;
 use App\Http\Controllers\Api\ReportingAudit\AuditLogController;
 use App\Http\Controllers\Api\ReportingAudit\DashboardController;
 use App\Http\Controllers\Api\ReportingAudit\InventoryReportController;
 use App\Http\Controllers\Api\ReportingAudit\MovementReportController;
 use App\Http\Controllers\Api\ReportingAudit\ReportPackController;
 use App\Http\Controllers\Api\ReportingAudit\SearchController;
-use App\Http\Controllers\Api\QcOutbound\StockOutController;
+use App\Http\Controllers\Api\SalesOutbound\QuickStockOutController;
+use App\Http\Controllers\Api\SalesOutbound\SaleOrderController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
@@ -65,6 +66,11 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         ->middleware('can:access-staff');
     Route::patch('internal-stock-movements/{id}/return', [InternalStockMovementController::class, 'returnToStock'])
         ->middleware('can:access-staff');
+    Route::apiResource('stocktakes', StocktakeController::class)->only(['index', 'store', 'show'])->middleware('can:access-staff');
+    Route::post('stocktakes/{id}/submit', [StocktakeController::class, 'submit'])->middleware('can:access-staff');
+    Route::apiResource('missing-item-reports', MissingItemReportController::class)->only(['index', 'show'])->middleware('can:access-staff');
+    Route::patch('missing-item-reports/{id}/investigate', [MissingItemReportController::class, 'investigate'])->middleware('can:access-staff');
+    Route::patch('missing-item-reports/{id}/resolve', [MissingItemReportController::class, 'resolve'])->middleware('can:access-admin');
 
     Route::get('purchase-orders/export', [PurchaseOrderController::class, 'export']);
     Route::apiResource('purchase-orders', PurchaseOrderController::class)->only(['index', 'store', 'show', 'update', 'destroy']);

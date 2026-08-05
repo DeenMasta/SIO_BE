@@ -2,12 +2,16 @@
 
 namespace App\Application\Support;
 
-use App\Models\SaleOrder;
+use App\Models\MissingItemReport;
 use App\Models\PurchaseOrder;
+use App\Models\QcDocument;
 use App\Models\QuickStockOut;
+use App\Models\SaleOrder;
 use App\Models\StockIn;
 use App\Models\StockOut;
+use App\Models\Stocktake;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Model;
 
 class DocumentNumberGenerator
 {
@@ -59,14 +63,24 @@ class DocumentNumberGenerator
     public function generateQcDocumentNumber(): string
     {
         return $this->generateNext(
-            modelClass: \App\Models\QcDocument::class,
+            modelClass: QcDocument::class,
             column: 'document_number',
             prefix: 'QC-'.CarbonImmutable::now()->format('Ymd'),
         );
     }
 
+    public function generateStocktakeNumber(): string
+    {
+        return $this->generateNext(Stocktake::class, 'stocktake_number', 'STK-'.CarbonImmutable::now()->format('Ymd'));
+    }
+
+    public function generateMissingItemReportNumber(): string
+    {
+        return $this->generateNext(MissingItemReport::class, 'report_number', 'MISS-'.CarbonImmutable::now()->format('Ymd'));
+    }
+
     /**
-     * @param  class-string<\Illuminate\Database\Eloquent\Model>  $modelClass
+     * @param  class-string<Model>  $modelClass
      */
     private function generateNext(string $modelClass, string $column, string $prefix): string
     {

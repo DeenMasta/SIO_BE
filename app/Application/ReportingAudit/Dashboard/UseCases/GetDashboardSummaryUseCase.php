@@ -44,9 +44,9 @@ class GetDashboardSummaryUseCase implements UseCase
             ->whereNull('stock_item_id')
             ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'IN_STOCK' THEN qty_in ELSE 0 END), 0) as qty_in_stock_in")
             ->selectRaw("COALESCE(SUM(CASE WHEN from_status = 'IN_STOCK' THEN qty_out ELSE 0 END), 0) as qty_in_stock_out")
-            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'DELIVERED' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'DELIVERED' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) as qty_delivered")
-            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'RETURNED' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'RETURNED' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) as qty_returned")
-            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'RETURNED_TO_SUPPLIER' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'RETURNED_TO_SUPPLIER' THEN GREATEST(qty_in, qty_out) ELSE 0 END), 0) as qty_returned_to_supplier")
+            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'DELIVERED' THEN CASE WHEN qty_in > qty_out THEN qty_in ELSE qty_out END ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'DELIVERED' THEN CASE WHEN qty_in > qty_out THEN qty_in ELSE qty_out END ELSE 0 END), 0) as qty_delivered")
+            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'RETURNED' THEN CASE WHEN qty_in > qty_out THEN qty_in ELSE qty_out END ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'RETURNED' THEN CASE WHEN qty_in > qty_out THEN qty_in ELSE qty_out END ELSE 0 END), 0) as qty_returned")
+            ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'RETURNED_TO_SUPPLIER' THEN CASE WHEN qty_in > qty_out THEN qty_in ELSE qty_out END ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'RETURNED_TO_SUPPLIER' THEN CASE WHEN qty_in > qty_out THEN qty_in ELSE qty_out END ELSE 0 END), 0) as qty_returned_to_supplier")
             ->first();
 
         $lowStockCount = $this->lowStockAlertService->lowStockCount();

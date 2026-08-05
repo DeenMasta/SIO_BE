@@ -21,4 +21,5 @@ enum MovementType: string
     case Adjustment = 'ADJUSTMENT';
     case QuickStockOut = 'QUICK_STOCK_OUT';
     case ExtraItemReturn = 'EXTRA_ITEM_RETURN';
+    case StocktakeWriteOff = 'STOCKTAKE_WRITE_OFF';
 }
