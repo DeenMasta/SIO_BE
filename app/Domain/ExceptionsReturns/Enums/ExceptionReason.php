@@ -11,6 +11,7 @@ enum ExceptionReason: string
     case CosmeticDefect = 'COSMETIC_DEFECT';
     case WarrantyClaim = 'WARRANTY_CLAIM';
     case ReturnBorrowedItem = 'RETURN_BORROWED_ITEM';
+    case ExchangeItem = 'EXCHANGE_ITEM';
 
     /**
      * @return array<int, string>
