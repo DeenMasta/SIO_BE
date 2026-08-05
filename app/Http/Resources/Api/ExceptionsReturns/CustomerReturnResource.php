@@ -22,6 +22,28 @@ class CustomerReturnResource extends JsonResource
             'status' => $this->status?->value,
             'remarks' => $this->remarks,
             'created_by' => $this->created_by,
+            'exchange' => $this->whenLoaded('exchange', function (): ?array {
+                if (! $this->exchange) {
+                    return null;
+                }
+
+                return [
+                    'id' => $this->exchange->id,
+                    'sale_order_id' => $this->exchange->sale_order_id,
+                    'replacement_stock_out_id' => $this->exchange->replacement_stock_out_id,
+                    'replacement_stock_out_number' => $this->exchange->replacementStockOut?->stock_out_number,
+                    'status' => $this->exchange->status?->value,
+                    'lines' => $this->exchange->lines->map(fn ($line): array => [
+                        'id' => $line->id,
+                        'customer_return_line_id' => $line->customer_return_line_id,
+                        'replacement_product_id' => $line->replacement_product_id,
+                        'replacement_product_code' => $line->replacementProduct?->product_code,
+                        'qty' => $line->qty,
+                        'sale_order_line_id' => $line->sale_order_line_id,
+                        'replacement_stock_out_line_id' => $line->replacement_stock_out_line_id,
+                    ])->values(),
+                ];
+            }),
             'created_by_user' => $this->whenLoaded('createdByUser', function (): ?array {
                 if (! $this->createdByUser) {
                     return null;

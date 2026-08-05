@@ -132,6 +132,11 @@ class EloquentSaleOrderRepository implements SaleOrderRepository
 
         $existingById = $existingLines->keyBy('id');
         $existingIds = $existingById->keys()->map(fn ($id): int => (int) $id)->all();
+        $exchangeLineIds = $existingLines
+            ->where('line_type', 'EXCHANGE')
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
 
         $referencedIds = StockOutLine::whereIn('sale_order_line_id', $existingIds, 'and', false)
             ->pluck('sale_order_line_id')
@@ -157,6 +162,16 @@ class EloquentSaleOrderRepository implements SaleOrderRepository
 
                 $normalized = $this->normalizeLine($line);
                 $fulfilledQty = (int) $existingLine->fulfilled_qty;
+
+                if (in_array($lineId, $exchangeLineIds, true)
+                    && ((int) $normalized['product_id'] !== (int) $existingLine->product_id
+                    || (int) $normalized['ordered_qty'] !== (int) $existingLine->ordered_qty
+                    || ! $normalized['is_free']
+                    || (float) $normalized['unit_price'] !== 0.0)) {
+                    throw ValidationException::withMessages([
+                        'lines' => ['Customer exchange lines are managed by the exchange workflow and cannot be edited.'],
+                    ]);
+                }
 
                 if (($referencedLookup[$lineId] ?? false) && (int) $normalized['product_id'] !== (int) $existingLine->product_id) {
                     throw ValidationException::withMessages([
@@ -188,6 +203,12 @@ class EloquentSaleOrderRepository implements SaleOrderRepository
         }
 
         $blockedDeleteIds = array_values(array_intersect($idsToDelete, $referencedIds));
+        $exchangeDeleteIds = array_values(array_intersect($idsToDelete, $exchangeLineIds));
+        if ($exchangeDeleteIds !== []) {
+            throw ValidationException::withMessages([
+                'lines' => ['Customer exchange lines are managed by the exchange workflow and cannot be removed.'],
+            ]);
+        }
         if ($blockedDeleteIds !== []) {
             throw ValidationException::withMessages([
                 'lines' => ['Cannot remove sale order lines that already have stock-out transactions. Update existing lines instead.'],

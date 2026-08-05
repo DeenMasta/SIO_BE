@@ -19,6 +19,7 @@ class StoreStockOutRequest extends StrictFormRequest
     {
         return [
             'sale_order_id' => ['nullable', 'integer', 'exists:sale_orders,id'],
+            'customer_exchange_id' => ['nullable', 'integer', 'exists:customer_exchanges,id'],
             'stock_out_number' => ['required', 'string', 'max:50', 'alpha_dash'],
             'idempotency_key' => ['required', 'string', 'max:80'],
             'stock_out_date' => ['required', 'date'],
@@ -61,6 +62,7 @@ class StoreStockOutRequest extends StrictFormRequest
     {
         return [
             'sale_order_id',
+            'customer_exchange_id',
             'stock_out_number',
             'idempotency_key',
             'stock_out_date',

@@ -43,6 +43,12 @@ class CancelCustomerReturnUseCase implements UseCase
                 ]);
             }
 
+            if ($return->exchange()->exists()) {
+                throw ValidationException::withMessages([
+                    'status' => ['Customer return cannot be cancelled after a customer exchange has been created.'],
+                ]);
+            }
+
             $affectedProductIds = $return->lines
                 ->pluck('product_id')
                 ->unique()
@@ -55,6 +61,12 @@ class CancelCustomerReturnUseCase implements UseCase
 
                 if ($line->stock_item_id !== null) {
                     $stockItem = StockItem::query()->lockForUpdate()->findOrFail((int) $line->stock_item_id);
+
+                    if ($stockItem->current_status !== $fromStatus) {
+                        throw ValidationException::withMessages([
+                            'status' => ['Customer return cannot be cancelled after its returned stock item has a downstream movement.'],
+                        ]);
+                    }
 
                     $stockItem->update([
                         'current_status' => StockItemStatus::Delivered,
@@ -141,7 +153,8 @@ class CancelCustomerReturnUseCase implements UseCase
             CustomerReturnNextAction::Restock => StockItemStatus::InStock,
             CustomerReturnNextAction::Repair => StockItemStatus::UnderRepair,
             CustomerReturnNextAction::Replace => StockItemStatus::Returned,
-            CustomerReturnNextAction::Scrap => StockItemStatus::ReturnedToSupplier,
+            CustomerReturnNextAction::Scrap,
+            CustomerReturnNextAction::Dispose => StockItemStatus::Scrapped,
         };
     }
 }

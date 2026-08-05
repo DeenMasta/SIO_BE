@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\ExceptionsReturns;
 use App\Application\Contracts\Repositories\CustomerReturnRepository;
 use App\Application\ExceptionsReturns\CustomerReturns\UseCases\CancelCustomerReturnUseCase;
 use App\Application\ExceptionsReturns\CustomerReturns\UseCases\CreateCustomerReturnUseCase;
+use App\Application\ExceptionsReturns\CustomerReturns\UseCases\CreateCustomerExchangeUseCase;
 use App\Application\ExceptionsReturns\CustomerReturns\UseCases\ListCustomerReturnsUseCase;
 use App\Application\Support\ApiResponse;
 use App\Application\Support\AuditLogger;
@@ -14,6 +15,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\ExceptionsReturns\CancelExceptionTransactionRequest;
 use App\Http\Requests\Api\ExceptionsReturns\CustomerReturn\ExportCustomerReturnRequest;
 use App\Http\Requests\Api\ExceptionsReturns\CustomerReturn\StoreCustomerReturnRequest;
+use App\Http\Requests\Api\ExceptionsReturns\CustomerReturn\StoreCustomerExchangeRequest;
+use App\Http\Resources\Api\ExceptionsReturns\CustomerExchangeResource;
 use App\Http\Resources\Api\ExceptionsReturns\CustomerReturnResource;
 use App\Models\CustomerReturn;
 use Illuminate\Http\JsonResponse;
@@ -27,6 +30,7 @@ class CustomerReturnController extends Controller
     public function __construct(
         private readonly ListCustomerReturnsUseCase $listReturns,
         private readonly CreateCustomerReturnUseCase $createReturn,
+        private readonly CreateCustomerExchangeUseCase $createExchange,
         private readonly CancelCustomerReturnUseCase $cancelReturn,
         private readonly CustomerReturnRepository $returns,
         private readonly AuditLogger $auditLogger,
@@ -126,6 +130,24 @@ class CustomerReturnController extends Controller
         ]);
 
         return ApiResponse::success(new CustomerReturnResource($cancelled), 'Customer return cancelled successfully.');
+    }
+
+    public function exchange(StoreCustomerExchangeRequest $request, int $id): JsonResponse
+    {
+        $return = $this->returns->findOrFail($id);
+        $this->authorize('create', $return);
+
+        $payload = $request->validated();
+        $payload['customer_return_id'] = $id;
+        $payload['created_by'] = (int) $request->user()->id;
+
+        $exchange = $this->createExchange->execute($payload);
+
+        return ApiResponse::success(
+            new CustomerExchangeResource($exchange),
+            'Customer exchange created successfully. Replacement stock out is pending.',
+            201,
+        );
     }
 
     /**

@@ -11,7 +11,7 @@ class EloquentCustomerReturnRepository implements CustomerReturnRepository
     public function paginate(int $perPage = 15): LengthAwarePaginator
     {
         return CustomerReturn::query()
-            ->with(['lines.stockItem', 'createdByUser'])
+            ->with(['lines.stockItem', 'createdByUser', 'exchange.lines.replacementProduct', 'exchange.replacementStockOut'])
             ->latest('id')
             ->paginate($perPage);
     }
@@ -19,7 +19,7 @@ class EloquentCustomerReturnRepository implements CustomerReturnRepository
     public function findOrFail(int $id): CustomerReturn
     {
         return CustomerReturn::query()
-            ->with(['lines.stockItem', 'createdByUser'])
+            ->with(['lines.stockItem', 'createdByUser', 'exchange.lines.replacementProduct', 'exchange.replacementStockOut'])
             ->findOrFail($id);
     }
 

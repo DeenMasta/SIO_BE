@@ -9,12 +9,14 @@ use App\Application\Support\AuditLogger;
 use App\Application\Support\StockBalanceUpdater;
 use App\Application\Support\UserNotificationService;
 use App\Domain\InventoryCore\Enums\MovementType;
+use App\Domain\ExceptionsReturns\Enums\CustomerExchangeStatus;
 use App\Domain\InventoryCore\Enums\StockItemQcStatus;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
 use App\Domain\QcOutbound\Enums\StockOutStatus;
 use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Domain\SalesOutbound\Enums\SaleOrderStatus;
 use App\Models\Product;
+use App\Models\CustomerExchange;
 use App\Models\SaleOrder;
 use App\Models\SaleOrderLine;
 use App\Models\StockItem;
@@ -81,6 +83,7 @@ class PostStockOutUseCase implements UseCase
                     ->all();
                 $beforeLowStockSnapshot = $this->lowStockAlertService->snapshotForProducts($affectedProductIds);
                 $usedStockItemIds = [];
+                $stockOutLinesBySaleOrderLine = [];
                 $saleOrder = null;
                 if (!empty($data['sale_order_id'])) {
                     $saleOrder = SaleOrder::query()->lockForUpdate()->find((int) $data['sale_order_id']);
@@ -91,8 +94,71 @@ class PostStockOutUseCase implements UseCase
                     }
                 }
 
+                $customerExchange = null;
+                $regularLines = array_values(array_filter($allLines, static fn (array $line): bool => ! (bool) ($line['is_extra'] ?? false)));
+                $regularSaleOrderLineIds = array_map(
+                    static fn (array $line): int => (int) ($line['sale_order_line_id'] ?? 0),
+                    $regularLines,
+                );
+
+                if (! empty($data['customer_exchange_id'])) {
+                    if ($saleOrder === null) {
+                        throw ValidationException::withMessages([
+                            'customer_exchange_id' => ['Customer exchange stock out requires a sale order.'],
+                        ]);
+                    }
+
+                    if ((int) $data['customer_id'] !== (int) $saleOrder->customer_id || ($data['extra_lines'] ?? []) !== []) {
+                        throw ValidationException::withMessages([
+                            'customer_exchange_id' => ['Customer exchange stock out must use its sale order customer and cannot include extra lines.'],
+                        ]);
+                    }
+
+                    $customerExchange = CustomerExchange::query()
+                        ->with('lines')
+                        ->lockForUpdate()
+                        ->findOrFail((int) $data['customer_exchange_id']);
+
+                    if ($customerExchange->status !== CustomerExchangeStatus::Pending
+                        || (int) $customerExchange->sale_order_id !== (int) $saleOrder->id) {
+                        throw ValidationException::withMessages([
+                            'customer_exchange_id' => ['Customer exchange must be pending and linked to the selected sale order.'],
+                        ]);
+                    }
+
+                    $expectedLineIds = $customerExchange->lines->pluck('sale_order_line_id')->map(static fn ($id): int => (int) $id)->sort()->values()->all();
+                    $actualLineIds = collect($regularSaleOrderLineIds)->filter()->sort()->values()->all();
+                    if (count($actualLineIds) !== count(array_unique($actualLineIds)) || $actualLineIds !== $expectedLineIds) {
+                        throw ValidationException::withMessages([
+                            'lines' => ['Customer exchange stock out must dispatch every pending exchange line exactly once.'],
+                        ]);
+                    }
+
+                    foreach ($regularLines as $line) {
+                        $exchangeLine = $customerExchange->lines->firstWhere('sale_order_line_id', (int) $line['sale_order_line_id']);
+                        if (! $exchangeLine
+                            || (int) $exchangeLine->replacement_product_id !== (int) $line['product_id']
+                            || (int) $exchangeLine->qty !== (int) $line['qty']) {
+                            throw ValidationException::withMessages([
+                                'lines' => ['Customer exchange stock out lines must match the approved exchange products and quantities.'],
+                            ]);
+                        }
+                    }
+                } elseif ($regularSaleOrderLineIds !== []) {
+                    $hasExchangeLine = SaleOrderLine::query()
+                        ->whereIn('id', array_filter($regularSaleOrderLineIds))
+                        ->where('line_type', 'EXCHANGE')
+                        ->exists();
+                    if ($hasExchangeLine) {
+                        throw ValidationException::withMessages([
+                            'customer_exchange_id' => ['Exchange sale order lines must be dispatched using their customer_exchange_id.'],
+                        ]);
+                    }
+                }
+
                 $stockOutData = [
                     'sale_order_id' => $saleOrder?->id,
+                    'customer_exchange_id' => $customerExchange?->id,
                     'quick_stock_out_id' => $data['quick_stock_out_id'] ?? null,
                     'stock_out_number' => $data['stock_out_number'],
                     'idempotency_key' => $data['idempotency_key'],
@@ -159,6 +225,10 @@ class PostStockOutUseCase implements UseCase
                     'settled_qty' => 0,
                     'remarks' => $line['remarks'] ?? null,
                 ]);
+
+                if ($saleOrderLineId !== null) {
+                    $stockOutLinesBySaleOrderLine[(int) $saleOrderLineId] = (int) $stockOutLine->id;
+                }
 
                 if ($product->requiresSerialNumber()) {
                     $stockItemIds = array_values(array_map('intval', Arr::wrap($line['stock_item_ids'] ?? [])));
@@ -292,6 +362,19 @@ class PostStockOutUseCase implements UseCase
                     }
                 }
 
+                if ($customerExchange !== null) {
+                    foreach ($customerExchange->lines as $exchangeLine) {
+                        $exchangeLine->update([
+                            'replacement_stock_out_line_id' => $stockOutLinesBySaleOrderLine[(int) $exchangeLine->sale_order_line_id],
+                        ]);
+                    }
+
+                    $customerExchange->update([
+                        'replacement_stock_out_id' => $stockOut->id,
+                        'status' => CustomerExchangeStatus::Dispatched,
+                    ]);
+                }
+
                 $this->stockBalanceUpdater->recomputeForProducts($affectedProductIds);
                 $this->lowStockAlertService->notifyStatusTransitions(
                     $beforeLowStockSnapshot,
@@ -300,7 +383,7 @@ class PostStockOutUseCase implements UseCase
                 );
 
                 $result = [
-                    'stock_out' => $stockOut->fresh(['saleOrder', 'lines.saleOrderLine', 'lines.lineItems.stockItem']),
+                    'stock_out' => $stockOut->fresh(['saleOrder', 'customerExchange', 'lines.saleOrderLine', 'lines.lineItems.stockItem']),
                     'replayed' => false,
                 ];
 

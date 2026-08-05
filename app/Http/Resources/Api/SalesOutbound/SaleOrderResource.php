@@ -34,6 +34,7 @@ class SaleOrderResource extends JsonResource
                 'id' => $line->id,
                 'product_id' => $line->product_id,
                 'source_stock_out_line_id' => $line->source_stock_out_line_id,
+                'line_type' => $line->line_type,
                 'product_code' => $line->product?->product_code,
                 'product_name' => $line->product?->product_name,
                 'product_type' => $line->product?->product_type?->value,

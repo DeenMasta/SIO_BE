@@ -169,7 +169,8 @@ class CreateCustomerReturnUseCase implements UseCase
             CustomerReturnNextAction::Restock => StockItemStatus::InStock,
             CustomerReturnNextAction::Repair => StockItemStatus::UnderRepair,
             CustomerReturnNextAction::Replace => StockItemStatus::Returned,
-            CustomerReturnNextAction::Scrap => StockItemStatus::ReturnedToSupplier,
+            CustomerReturnNextAction::Scrap,
+            CustomerReturnNextAction::Dispose => StockItemStatus::Scrapped,
         };
     }
 }

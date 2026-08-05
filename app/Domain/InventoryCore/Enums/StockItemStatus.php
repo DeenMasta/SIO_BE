@@ -11,5 +11,6 @@ enum StockItemStatus: string
     case UnderRepair = 'UNDER_REPAIR';
     case ReturnedToSupplier = 'RETURNED_TO_SUPPLIER';
     case Returned = 'RETURNED';
+    case Scrapped = 'SCRAPPED';
     case Missing = 'MISSING';
 }

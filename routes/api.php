@@ -107,6 +107,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::patch('return-to-suppliers/{id}/cancel', [ReturnToSupplierController::class, 'cancel']);
     Route::get('customer-returns/export', [CustomerReturnController::class, 'export']);
     Route::apiResource('customer-returns', CustomerReturnController::class)->only(['index', 'store', 'show']);
+    Route::post('customer-returns/{id}/exchange', [CustomerReturnController::class, 'exchange']);
     Route::patch('customer-returns/{id}/cancel', [CustomerReturnController::class, 'cancel']);
 
     Route::middleware('can:access-staff')->prefix('search')->group(function () {

@@ -8,6 +8,7 @@ enum CustomerReturnNextAction: string
     case Repair = 'REPAIR';
     case Replace = 'REPLACE';
     case Scrap = 'SCRAP';
+    case Dispose = 'DISPOSE';
 
     /**
      * @return array<int, string>

@@ -13,6 +13,7 @@ class SaleOrderLine extends Model
 
     protected $fillable = [
         'sale_order_id',
+        'line_type',
         'product_id',
         'source_stock_out_line_id',
         'ordered_qty',
@@ -52,5 +53,10 @@ class SaleOrderLine extends Model
     public function dispatchedItems(): HasManyThrough
     {
         return $this->hasManyThrough(StockOutLineItem::class, StockOutLine::class);
+    }
+
+    public function customerExchangeLine(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(CustomerExchangeLine::class);
     }
 }

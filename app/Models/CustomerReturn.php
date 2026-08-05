@@ -40,4 +40,9 @@ class CustomerReturn extends Model
     {
         return $this->belongsTo(User::class, 'created_by');
     }
+
+    public function exchange(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(CustomerExchange::class);
+    }
 }

@@ -116,6 +116,154 @@ class ExceptionsReturnsApiTest extends TestCase
         $this->assertTrue(StockMovement::query()->count() > 0);
     }
 
+    public function test_customer_return_can_dispose_a_delivered_item(): void
+    {
+        $admin = User::factory()->admin()->create();
+        [$stockItemId, $productId, $customerId, $stockOutId, $stockOutLineId] = $this->createDeliveredDevice($admin);
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->postJson('/api/customer-returns', [
+            'return_transaction_number' => 'CRT-DISPOSE-001',
+            'return_date' => now()->toDateString(),
+            'customer_id' => $customerId,
+            'original_invoice_number' => 'INV-DISPOSE-001',
+            'original_stock_out_id' => $stockOutId,
+            'lines' => [[
+                'original_stock_out_line_id' => $stockOutLineId,
+                'product_id' => $productId,
+                'stock_item_id' => $stockItemId,
+                'qty' => 1,
+                'reason_for_return' => 'PHYSICAL_DAMAGE',
+                'next_action' => 'DISPOSE',
+            ]],
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('stock_items', [
+            'id' => $stockItemId,
+            'current_status' => 'SCRAPPED',
+            'is_available' => 0,
+        ]);
+    }
+
+    public function test_customer_exchange_adds_a_free_sale_order_line_and_dispatches_it(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create([
+            'product_code' => 'EXCHANGE-CONSUMABLE-001',
+            'product_type' => 'CONSUMABLE',
+            'requires_serial_number' => false,
+        ]);
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        StockMovement::query()->create([
+            'movement_datetime' => now(),
+            'product_id' => $product->id,
+            'stock_item_id' => null,
+            'movement_type' => 'STOCK_IN',
+            'reference_table' => 'test_seed',
+            'reference_id' => 8001,
+            'qty_in' => 2,
+            'qty_out' => 0,
+            'to_status' => 'IN_STOCK',
+            'performed_by' => $admin->id,
+        ]);
+
+        $saleOrder = $this->postJson('/api/sale-orders', [
+            'so_number' => 'SO-EXCHANGE-001',
+            'so_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'invoice_number' => 'INV-EXCHANGE-001',
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 1,
+                'unit_price' => 50,
+            ]],
+        ])->assertCreated();
+        $saleOrderId = (int) $saleOrder->json('data.id');
+        $originalSaleOrderLineId = (int) $saleOrder->json('data.lines.0.id');
+
+        $this->patchJson('/api/sale-orders/'.$saleOrderId.'/confirm')->assertOk();
+        $originalStockOut = $this->postJson('/api/stock-outs', [
+            'sale_order_id' => $saleOrderId,
+            'stock_out_number' => 'SOUT-EXCHANGE-ORIGINAL',
+            'idempotency_key' => 'idem-exchange-original',
+            'stock_out_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'sale_order_line_id' => $originalSaleOrderLineId,
+                'qty' => 1,
+            ]],
+        ])->assertCreated();
+        $originalStockOutId = (int) $originalStockOut->json('data.id');
+        $originalStockOutLineId = (int) $originalStockOut->json('data.lines.0.id');
+
+        $return = $this->postJson('/api/customer-returns', [
+            'return_transaction_number' => 'CRT-EXCHANGE-001',
+            'return_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'original_invoice_number' => 'INV-EXCHANGE-001',
+            'original_stock_out_id' => $originalStockOutId,
+            'lines' => [[
+                'original_stock_out_line_id' => $originalStockOutLineId,
+                'product_id' => $product->id,
+                'qty' => 1,
+                'reason_for_return' => 'WARRANTY_CLAIM',
+                'next_action' => 'RESTOCK',
+            ]],
+        ])->assertCreated();
+        $returnId = (int) $return->json('data.id');
+        $returnLineId = (int) $return->json('data.lines.0.id');
+
+        $exchange = $this->postJson('/api/customer-returns/'.$returnId.'/exchange', [
+            'lines' => [[
+                'customer_return_line_id' => $returnLineId,
+                'replacement_product_id' => $product->id,
+                'qty' => 1,
+            ]],
+        ])->assertCreated()
+            ->assertJsonPath('data.status', 'PENDING')
+            ->assertJsonPath('data.sale_order_id', $saleOrderId);
+        $exchangeId = (int) $exchange->json('data.id');
+        $exchangeSaleOrderLineId = (int) $exchange->json('data.lines.0.sale_order_line_id');
+
+        $this->assertDatabaseHas('sale_orders', ['id' => $saleOrderId, 'status' => 'CONFIRMED']);
+        $this->assertDatabaseHas('sale_order_lines', [
+            'id' => $originalSaleOrderLineId,
+            'fulfilled_qty' => 1,
+            'line_type' => 'SALE',
+        ]);
+        $this->assertDatabaseHas('sale_order_lines', [
+            'id' => $exchangeSaleOrderLineId,
+            'line_type' => 'EXCHANGE',
+            'is_free' => 1,
+            'unit_price' => 0,
+            'subtotal' => 0,
+            'fulfilled_qty' => 0,
+        ]);
+
+        $this->postJson('/api/stock-outs', [
+            'sale_order_id' => $saleOrderId,
+            'customer_exchange_id' => $exchangeId,
+            'stock_out_number' => 'SOUT-EXCHANGE-REPLACEMENT',
+            'idempotency_key' => 'idem-exchange-replacement',
+            'stock_out_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'sale_order_line_id' => $exchangeSaleOrderLineId,
+                'qty' => 1,
+            ]],
+        ])->assertCreated()
+            ->assertJsonPath('data.customer_exchange_id', $exchangeId);
+
+        $this->assertDatabaseHas('sale_orders', ['id' => $saleOrderId, 'status' => 'FULFILLED']);
+        $this->assertDatabaseHas('sale_order_lines', ['id' => $originalSaleOrderLineId, 'fulfilled_qty' => 1]);
+        $this->assertDatabaseHas('sale_order_lines', ['id' => $exchangeSaleOrderLineId, 'fulfilled_qty' => 1]);
+        $this->assertDatabaseHas('customer_exchanges', ['id' => $exchangeId, 'status' => 'DISPATCHED']);
+    }
+
     public function test_staff_can_create_repair_rts_and_customer_return(): void
     {
         $staff = User::factory()->staff()->create();

@@ -16,6 +16,7 @@ class StockOutResource extends JsonResource
             'id' => $this->id,
             'sale_order_id' => $this->sale_order_id,
             'sale_order_number' => $this->saleOrder?->so_number,
+            'customer_exchange_id' => $this->customer_exchange_id,
             'stock_out_number' => $this->stock_out_number,
             'idempotency_key' => $this->idempotency_key,
             'stock_out_date' => $this->stock_out_date,
@@ -35,6 +36,7 @@ class StockOutResource extends JsonResource
             'lines' => $this->lines->map(fn ($line): array => [
                 'id'             => $line->id,
                 'sale_order_line_id' => $line->sale_order_line_id,
+                'sale_order_line_type' => $line->saleOrderLine?->line_type,
                 'is_extra' => (bool) $line->is_extra,
                 'product_id'     => $line->product_id,
                 'product_code' => $line->product?->product_code,

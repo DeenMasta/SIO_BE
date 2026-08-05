@@ -57,4 +57,9 @@ class SaleOrder extends Model
     {
         return $this->hasOne(QuickStockOut::class, 'converted_sale_order_id');
     }
+
+    public function customerExchanges(): HasMany
+    {
+        return $this->hasMany(CustomerExchange::class);
+    }
 }
