@@ -85,6 +85,33 @@ class MasterDataApiTest extends TestCase
             ->assertJsonPath('meta.pagination.last_page', 1);
     }
 
+    public function test_staff_can_search_customers_across_full_dataset_with_server_side_pagination(): void
+    {
+        $staff = User::factory()->staff()->create();
+        Sanctum::actingAs($staff, ['staff-access']);
+
+        Customer::factory()->count(50)->create();
+        $target = Customer::factory()->create([
+            'customer_name' => 'Needle Customer Sdn Bhd',
+            'contact_person' => 'Needle Contact',
+        ]);
+
+        $this->getJson('/api/customers?per_page=50')
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.current_page', 1)
+            ->assertJsonPath('meta.pagination.per_page', 50)
+            ->assertJsonPath('meta.pagination.total', 51)
+            ->assertJsonPath('meta.pagination.last_page', 2);
+
+        $this->getJson('/api/customers?per_page=50&q=needle')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $target->id)
+            ->assertJsonPath('data.0.customer_name', 'Needle Customer Sdn Bhd')
+            ->assertJsonPath('meta.pagination.total', 1)
+            ->assertJsonPath('meta.pagination.last_page', 1);
+    }
+
     public function test_admin_can_crud_product(): void
     {
         $admin = User::factory()->admin()->create();

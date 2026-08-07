@@ -31,19 +31,14 @@ class CustomerController extends Controller
 
         $customers = $this->listCustomers->execute([
             'per_page' => (int) $request->integer('per_page', 15),
+            'q' => trim((string) $request->query('q', '')),
+            'status' => $request->query('status'),
         ]);
 
-        return ApiResponse::success(
+        return ApiResponse::paginated(
+            $customers,
             CustomerResource::collection($customers->items()),
             'Customers retrieved successfully.',
-            meta: [
-                'pagination' => [
-                    'current_page' => $customers->currentPage(),
-                    'per_page' => $customers->perPage(),
-                    'total' => $customers->total(),
-                    'last_page' => $customers->lastPage(),
-                ],
-            ],
         );
     }
 
