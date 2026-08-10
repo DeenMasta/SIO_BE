@@ -17,7 +17,7 @@ php artisan <command-name> --help
 
 ### Recalculate PO received quantities
 
-Rebuilds each PO line's `received_qty` from linked stock-in lines with `POSTED` or `RECEIVED` status. It also corrects the PO status to `ISSUED`, `PARTIAL`, or `COMPLETED`. Draft and cancelled POs retain their existing status.
+Rebuilds each PO line's `received_qty` by adding its `POSTED` and `RECEIVED` stock-in quantities. It also includes legacy stock-in lines linked only by PO and product when that product appears once on the PO. The command corrects the PO status to `ISSUED`, `PARTIAL`, or `COMPLETED`; draft and cancelled POs retain their existing status.
 
 Preview an affected PO without saving changes:
 

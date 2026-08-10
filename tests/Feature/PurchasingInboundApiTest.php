@@ -410,7 +410,7 @@ class PurchasingInboundApiTest extends TestCase
         ]);
         StockInLine::query()->create([
             'stock_in_id' => $secondStockIn->id,
-            'purchase_order_line_id' => $purchaseOrderLine->id,
+            'purchase_order_line_id' => null,
             'product_id' => $product->id,
             'received_qty' => 2,
         ]);

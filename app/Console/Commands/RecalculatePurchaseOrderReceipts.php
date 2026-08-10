@@ -49,14 +49,10 @@ class RecalculatePurchaseOrderReceipts extends Command
                     ->lockForUpdate()
                     ->findOrFail($purchaseOrder->id);
 
+                $receivedQtyByLineId = $this->receivedQtyByLineId($lockedPurchaseOrder);
                 $lineChanges = 0;
                 foreach ($lockedPurchaseOrder->lines as $line) {
-                    $actualReceivedQty = (int) StockInLine::query()
-                        ->join('stock_in', 'stock_in.id', '=', 'stock_in_lines.stock_in_id')
-                        ->where('stock_in_lines.purchase_order_line_id', $line->id)
-                        ->where('stock_in.purchase_order_id', $lockedPurchaseOrder->id)
-                        ->whereIn('stock_in.status', [StockInStatus::Received->value, StockInStatus::Posted->value])
-                        ->sum('stock_in_lines.received_qty');
+                    $actualReceivedQty = $receivedQtyByLineId[(int) $line->id] ?? 0;
 
                     if ((int) $line->received_qty !== $actualReceivedQty) {
                         $this->line(sprintf(
@@ -70,6 +66,8 @@ class RecalculatePurchaseOrderReceipts extends Command
 
                         if (! $dryRun) {
                             $line->update(['received_qty' => $actualReceivedQty]);
+                        } else {
+                            $line->received_qty = $actualReceivedQty;
                         }
                     }
                 }
@@ -80,25 +78,11 @@ class RecalculatePurchaseOrderReceipts extends Command
                     return [$lineChanges, false];
                 }
 
-                $lines = $dryRun
-                    ? $lockedPurchaseOrder->lines->map(function (PurchaseOrderLine $line): PurchaseOrderLine {
-                        $actualReceivedQty = (int) StockInLine::query()
-                            ->join('stock_in', 'stock_in.id', '=', 'stock_in_lines.stock_in_id')
-                            ->where('stock_in_lines.purchase_order_line_id', $line->id)
-                            ->where('stock_in.purchase_order_id', $line->purchase_order_id)
-                            ->whereIn('stock_in.status', [StockInStatus::Received->value, StockInStatus::Posted->value])
-                            ->sum('stock_in_lines.received_qty');
-                        $line->received_qty = $actualReceivedQty;
-
-                        return $line;
-                    })
-                    : $lockedPurchaseOrder->fresh('lines')->lines;
-
-                $status = $lines->isNotEmpty() && $lines->every(
+                $status = $lockedPurchaseOrder->lines->isNotEmpty() && $lockedPurchaseOrder->lines->every(
                     static fn (PurchaseOrderLine $line): bool => (int) $line->received_qty >= (int) $line->ordered_qty,
                 )
                     ? PurchaseOrderStatus::Completed
-                    : ($lines->contains(static fn (PurchaseOrderLine $line): bool => (int) $line->received_qty > 0)
+                    : ($lockedPurchaseOrder->lines->contains(static fn (PurchaseOrderLine $line): bool => (int) $line->received_qty > 0)
                         ? PurchaseOrderStatus::Partial
                         : PurchaseOrderStatus::Issued);
 
@@ -132,5 +116,62 @@ class RecalculatePurchaseOrderReceipts extends Command
         ));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Return total received quantities for each PO line from its stock-in records.
+     *
+     * Current receipts reference purchase_order_line_id directly. Older receipts
+     * created before that link existed only have the PO and product relationship,
+     * so they are included only when that product appears once on the PO. This
+     * avoids guessing which line should receive a quantity when a PO has the same
+     * product on multiple lines.
+     *
+     * @return array<int, int>
+     */
+    private function receivedQtyByLineId(PurchaseOrder $purchaseOrder): array
+    {
+        $lines = $purchaseOrder->lines;
+        if ($lines->isEmpty()) {
+            return [];
+        }
+
+        $lineIds = $lines->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all();
+        $receivedQtyByLineId = array_fill_keys($lineIds, 0);
+        $receivedStockInStatuses = [StockInStatus::Received->value, StockInStatus::Posted->value];
+
+        $linkedTotals = StockInLine::query()
+            ->join('stock_in', 'stock_in.id', '=', 'stock_in_lines.stock_in_id')
+            ->where('stock_in.purchase_order_id', $purchaseOrder->id)
+            ->whereIn('stock_in.status', $receivedStockInStatuses)
+            ->whereIn('stock_in_lines.purchase_order_line_id', $lineIds)
+            ->groupBy('stock_in_lines.purchase_order_line_id')
+            ->selectRaw('stock_in_lines.purchase_order_line_id, SUM(stock_in_lines.received_qty) as received_qty')
+            ->pluck('received_qty', 'purchase_order_line_id');
+
+        foreach ($linkedTotals as $lineId => $receivedQty) {
+            $receivedQtyByLineId[(int) $lineId] = (int) $receivedQty;
+        }
+
+        $lineCountByProductId = $lines->countBy('product_id');
+        $legacyTotalsByProductId = StockInLine::query()
+            ->join('stock_in', 'stock_in.id', '=', 'stock_in_lines.stock_in_id')
+            ->where('stock_in.purchase_order_id', $purchaseOrder->id)
+            ->whereIn('stock_in.status', $receivedStockInStatuses)
+            ->whereNull('stock_in_lines.purchase_order_line_id')
+            ->whereIn('stock_in_lines.product_id', $lines->pluck('product_id')->unique()->all())
+            ->groupBy('stock_in_lines.product_id')
+            ->selectRaw('stock_in_lines.product_id, SUM(stock_in_lines.received_qty) as received_qty')
+            ->pluck('received_qty', 'product_id');
+
+        foreach ($lines as $line) {
+            if ((int) $lineCountByProductId->get($line->product_id) !== 1) {
+                continue;
+            }
+
+            $receivedQtyByLineId[(int) $line->id] += (int) ($legacyTotalsByProductId->get($line->product_id) ?? 0);
+        }
+
+        return $receivedQtyByLineId;
     }
 }
