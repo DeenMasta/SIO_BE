@@ -371,6 +371,64 @@ class PurchasingInboundApiTest extends TestCase
         ]);
     }
 
+    public function test_recalculate_purchase_order_receipts_repairs_out_of_sync_received_qty(): void
+    {
+        $supplier = Supplier::factory()->create();
+        $user = User::factory()->create();
+        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+        $purchaseOrder = PurchaseOrder::factory()->create([
+            'supplier_id' => $supplier->id,
+            'status' => 'PARTIAL',
+            'created_by' => $user->id,
+        ]);
+        $purchaseOrderLine = PurchaseOrderLine::query()->create([
+            'purchase_order_id' => $purchaseOrder->id,
+            'product_id' => $product->id,
+            'ordered_qty' => 3,
+            'received_qty' => 1,
+            'unit_price' => 1,
+            'subtotal' => 3,
+        ]);
+
+        $firstStockIn = StockIn::factory()->create([
+            'purchase_order_id' => $purchaseOrder->id,
+            'supplier_id' => $supplier->id,
+            'stock_in_pic_id' => $user->id,
+            'status' => 'POSTED',
+        ]);
+        $secondStockIn = StockIn::factory()->create([
+            'purchase_order_id' => $purchaseOrder->id,
+            'supplier_id' => $supplier->id,
+            'stock_in_pic_id' => $user->id,
+            'status' => 'POSTED',
+        ]);
+        StockInLine::query()->create([
+            'stock_in_id' => $firstStockIn->id,
+            'purchase_order_line_id' => $purchaseOrderLine->id,
+            'product_id' => $product->id,
+            'received_qty' => 1,
+        ]);
+        StockInLine::query()->create([
+            'stock_in_id' => $secondStockIn->id,
+            'purchase_order_line_id' => $purchaseOrderLine->id,
+            'product_id' => $product->id,
+            'received_qty' => 2,
+        ]);
+
+        $this->artisan('purchase-orders:recalculate-receipts', [
+            '--purchase-order-id' => [$purchaseOrder->id],
+        ])->assertExitCode(0);
+
+        $this->assertDatabaseHas('purchase_order_lines', [
+            'id' => $purchaseOrderLine->id,
+            'received_qty' => 3,
+        ]);
+        $this->assertDatabaseHas('purchase_orders', [
+            'id' => $purchaseOrder->id,
+            'status' => 'COMPLETED',
+        ]);
+    }
+
     public function test_stock_in_rejects_receive_beyond_ordered_qty(): void
     {
         $admin = User::factory()->admin()->create();

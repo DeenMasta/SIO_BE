@@ -49,7 +49,13 @@ class PostStockInUseCase implements UseCase
             $purchaseOrder = null;
 
             if ($purchaseOrderId !== null) {
-                $purchaseOrder = PurchaseOrder::query()->with('lines.product')->findOrFail((int) $purchaseOrderId);
+                // Serialize receipts for the same PO. Without this lock, two receipt
+                // requests can both read the same received_qty and the later save can
+                // overwrite the earlier one instead of adding to it.
+                $purchaseOrder = PurchaseOrder::query()
+                    ->with('lines.product')
+                    ->lockForUpdate()
+                    ->findOrFail((int) $purchaseOrderId);
                 if ((int) $purchaseOrder->supplier_id !== (int) $data['supplier_id']) {
                     throw ValidationException::withMessages([
                         'purchase_order_id' => ['Purchase order supplier does not match selected supplier.'],
