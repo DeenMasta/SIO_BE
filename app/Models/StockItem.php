@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Domain\InventoryCore\Enums\SerialSource;
 use App\Domain\InventoryCore\Enums\StockItemQcStatus;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -36,6 +37,17 @@ class StockItem extends Model
             'is_available'    => 'boolean',
             'last_movement_at' => 'datetime',
         ];
+    }
+
+    public function scopeWithoutUnresolvedMissingItemReport(Builder $query): void
+    {
+        $query->whereNotExists(function ($missingReportQuery): void {
+            $missingReportQuery
+                ->selectRaw('1')
+                ->from('missing_item_reports as mir')
+                ->whereColumn('mir.stock_item_id', 'stock_items.id')
+                ->whereIn('mir.status', ['OPEN', 'INVESTIGATING']);
+        });
     }
 
     public function stockInLine(): BelongsTo

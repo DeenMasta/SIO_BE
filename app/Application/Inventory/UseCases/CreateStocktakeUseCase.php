@@ -24,7 +24,7 @@ final class CreateStocktakeUseCase implements UseCase
 
         return DB::transaction(function () use ($data): Stocktake {
             $inventory = $this->inventoryStockQuery->base()
-                ->whereRaw('('.$this->availableQtyExpression().') > 0')
+                ->whereRaw('('.$this->inventoryStockQuery->availableQtyExpression().') > 0')
                 ->orderBy('p.product_code')
                 ->get();
 
@@ -51,6 +51,7 @@ final class CreateStocktakeUseCase implements UseCase
                     ->where('current_status', StockItemStatus::InStock->value)
                     ->where('is_available', true)
                     ->where('qc_status', StockItemQcStatus::Passed->value)
+                    ->withoutUnresolvedMissingItemReport()
                     ->orderBy('id')
                     ->get(['id', 'serial_number'])
                     ->each(fn (StockItem $item) => $line->items()->create([
@@ -67,10 +68,5 @@ final class CreateStocktakeUseCase implements UseCase
 
             return $stocktake->load(['lines.product', 'lines.items', 'createdByUser']);
         });
-    }
-
-    private function availableQtyExpression(): string
-    {
-        return 'CASE WHEN p.requires_serial_number = 1 THEN COALESCE(sa.qty_available_serialized, 0) ELSE CASE WHEN ns.qty_available_non_serialized IS NULL THEN COALESCE(sb.qty_in_stock, 0) WHEN ns.qty_available_non_serialized < 0 THEN 0 ELSE ns.qty_available_non_serialized END END';
     }
 }

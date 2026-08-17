@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Domain\InventoryCore\Enums\MissingItemReportStatus;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -16,6 +17,14 @@ class MissingItemReport extends Model
     protected function casts(): array
     {
         return ['missing_qty' => 'integer', 'resolved_at' => 'datetime', 'status' => MissingItemReportStatus::class];
+    }
+
+    public function scopeUnresolved(Builder $query): void
+    {
+        $query->whereIn('status', [
+            MissingItemReportStatus::Open->value,
+            MissingItemReportStatus::Investigating->value,
+        ]);
     }
 
     public function stocktake(): BelongsTo

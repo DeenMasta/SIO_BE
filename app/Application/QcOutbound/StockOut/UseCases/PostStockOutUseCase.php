@@ -17,6 +17,7 @@ use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Domain\SalesOutbound\Enums\SaleOrderStatus;
 use App\Models\Product;
 use App\Models\CustomerExchange;
+use App\Models\MissingItemReport;
 use App\Models\SaleOrder;
 use App\Models\SaleOrderLine;
 use App\Models\StockItem;
@@ -258,6 +259,7 @@ class PostStockOutUseCase implements UseCase
                         ->where('current_status', StockItemStatus::InStock->value)
                         ->where('is_available', true)
                         ->where('qc_status', StockItemQcStatus::Passed->value)
+                        ->withoutUnresolvedMissingItemReport()
                         ->lockForUpdate()
                         ->get();
 
@@ -320,7 +322,7 @@ class PostStockOutUseCase implements UseCase
                     ->first();
 
                 $availableQty = max(
-                    (int) ($movementTotals->qty_in_stock_in ?? 0) - (int) ($movementTotals->qty_in_stock_out ?? 0),
+                    (int) ($movementTotals->qty_in_stock_in ?? 0) - (int) ($movementTotals->qty_in_stock_out ?? 0) - $this->unresolvedNonSerializedShortage((int) $product->id),
                     0,
                 );
                 if ($availableQty < $qty) {
@@ -440,5 +442,15 @@ class PostStockOutUseCase implements UseCase
 
             throw $exception;
         }
+    }
+
+    private function unresolvedNonSerializedShortage(int $productId): int
+    {
+        return (int) MissingItemReport::query()
+            ->where('product_id', $productId)
+            ->whereNull('stock_item_id')
+            ->unresolved()
+            ->lockForUpdate()
+            ->sum('missing_qty');
     }
 }

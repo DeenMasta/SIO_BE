@@ -88,6 +88,7 @@ class PostQuickStockOutUseCase
                     ->where('current_status', StockItemStatus::InStock->value)
                     ->where('is_available', true)
                     ->where('qc_status', StockItemQcStatus::Passed->value)
+                    ->withoutUnresolvedMissingItemReport()
                     ->lockForUpdate()
                     ->get()
                     ->keyBy(static fn (StockItem $item): string => strtoupper((string) $item->serial_number));

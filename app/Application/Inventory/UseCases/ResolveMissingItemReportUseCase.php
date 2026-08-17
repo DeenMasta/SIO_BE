@@ -32,6 +32,8 @@ final class ResolveMissingItemReportUseCase implements UseCase
                 throw ValidationException::withMessages(['report' => ['This missing-item report has already been resolved.']]);
             }
 
+            $beforeLowStockSnapshot = $this->lowStock->snapshotForProducts([$report->product_id]);
+
             $resolution = $data['resolution_type'];
             $stockOutId = null;
             if ($resolution === 'STOCK_OUT') {
@@ -51,6 +53,11 @@ final class ResolveMissingItemReportUseCase implements UseCase
                 'resolved_by' => $data['resolved_by'],
                 'resolved_at' => now(),
             ]);
+
+            if ($resolution === 'WRITE_OFF') {
+                $this->balances->recomputeForProducts([$report->product_id]);
+            }
+            $this->lowStock->notifyStatusTransitions($beforeLowStockSnapshot, [$report->product_id], (int) $data['resolved_by']);
 
             $this->auditLogger->log((int) $data['resolved_by'], 'StockManagement', 'MissingItemReport', (int) $report->id, AuditAction::Update, newValues: [
                 'resolution_type' => $resolution,
@@ -90,7 +97,6 @@ final class ResolveMissingItemReportUseCase implements UseCase
 
     private function writeOff(MissingItemReport $report, int $userId, string $remarks): void
     {
-        $before = $this->lowStock->snapshotForProducts([$report->product_id]);
         if ($report->stockItem !== null) {
             $item = $report->stockItem;
             if ($item->current_status !== StockItemStatus::InStock || ! $item->is_available || $item->qc_status !== StockItemQcStatus::Passed) {
@@ -117,7 +123,5 @@ final class ResolveMissingItemReportUseCase implements UseCase
                 'performed_by' => $userId, 'remarks' => $remarks ?: 'Stocktake shortage write-off.',
             ]);
         }
-        $this->balances->recomputeForProducts([$report->product_id]);
-        $this->lowStock->notifyStatusTransitions($before, [$report->product_id], $userId);
     }
 }

@@ -32,4 +32,9 @@ class StocktakePolicy
     {
         return $user->isStaff() && $user->isActive();
     }
+
+    public function delete(User $user, Stocktake $stocktake): bool
+    {
+        return $user->isStaff() && $user->isActive();
+    }
 }

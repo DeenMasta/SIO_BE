@@ -13,7 +13,80 @@ class StocktakeApiTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_short_stocktake_requires_an_audited_write_off_before_inventory_changes(): void
+    public function test_counting_stocktake_can_be_deleted(): void
+    {
+        $admin = User::factory()->admin()->create();
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $stocktake = $this->postJson('/api/stocktakes', ['stocktake_date' => now()->toDateString()])
+            ->assertCreated();
+        $stocktakeId = (int) $stocktake->json('data.id');
+
+        $this->deleteJson('/api/stocktakes/'.$stocktakeId)
+            ->assertOk()
+            ->assertJsonPath('message', 'Stocktake deleted successfully.');
+
+        $this->assertDatabaseMissing('stocktakes', ['id' => $stocktakeId]);
+    }
+
+    public function test_deleting_submitted_stocktake_removes_its_unresolved_missing_item_reports(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create(['product_code' => 'ACC-STK-DELETE-001', 'product_type' => 'ACCESSORY', 'requires_serial_number' => false]);
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->postJson('/api/stock-ins', ['stock_in_number' => 'SIN-STK-DELETE-001', 'stock_in_date' => now()->toDateString(), 'supplier_id' => $supplier->id, 'lines' => [['product_id' => $product->id, 'received_qty' => 5]]])->assertCreated();
+        $stocktake = $this->postJson('/api/stocktakes', ['stocktake_date' => now()->toDateString()])->assertCreated();
+        $stocktakeId = (int) $stocktake->json('data.id');
+        $lineId = (int) $stocktake->json('data.lines.0.id');
+
+        $this->postJson("/api/stocktakes/{$stocktakeId}/submit", ['lines' => [['line_id' => $lineId, 'counted_qty' => 3]]])->assertOk();
+        $this->assertDatabaseHas('missing_item_reports', ['stocktake_id' => $stocktakeId, 'status' => 'OPEN']);
+        $this->getJson('/api/inventories')
+            ->assertOk()
+            ->assertJsonPath('data.0.qty_available', 3)
+            ->assertJsonPath('data.0.qty_missing_under_review', 2)
+            ->assertJsonPath('data.0.has_missing_under_review', true);
+
+        $this->deleteJson('/api/stocktakes/'.$stocktakeId)
+            ->assertOk()
+            ->assertJsonPath('message', 'Stocktake and its unresolved missing-item reports deleted successfully.');
+
+        $this->assertDatabaseMissing('stocktakes', ['id' => $stocktakeId]);
+        $this->assertDatabaseMissing('missing_item_reports', ['stocktake_id' => $stocktakeId]);
+        $this->getJson('/api/inventories')
+            ->assertOk()
+            ->assertJsonPath('data.0.qty_available', 5)
+            ->assertJsonPath('data.0.qty_missing_under_review', 0)
+            ->assertJsonPath('data.0.has_missing_under_review', false);
+    }
+
+    public function test_stocktake_with_resolved_missing_item_reports_cannot_be_deleted(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create(['product_code' => 'ACC-STK-RESOLVED-001', 'product_type' => 'ACCESSORY', 'requires_serial_number' => false]);
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->postJson('/api/stock-ins', ['stock_in_number' => 'SIN-STK-RESOLVED-001', 'stock_in_date' => now()->toDateString(), 'supplier_id' => $supplier->id, 'lines' => [['product_id' => $product->id, 'received_qty' => 5]]])->assertCreated();
+        $stocktake = $this->postJson('/api/stocktakes', ['stocktake_date' => now()->toDateString()])->assertCreated();
+        $stocktakeId = (int) $stocktake->json('data.id');
+        $lineId = (int) $stocktake->json('data.lines.0.id');
+
+        $this->postJson("/api/stocktakes/{$stocktakeId}/submit", ['lines' => [['line_id' => $lineId, 'counted_qty' => 3]]])->assertOk();
+        $reportId = (int) $this->getJson('/api/missing-item-reports?status=OPEN')->assertOk()->json('data.0.id');
+        $this->patchJson('/api/missing-item-reports/'.$reportId.'/resolve', ['resolution_type' => 'WRITE_OFF', 'resolution_notes' => 'Approved count correction.'])->assertOk();
+
+        $this->deleteJson('/api/stocktakes/'.$stocktakeId)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('stocktake');
+
+        $this->assertDatabaseHas('stocktakes', ['id' => $stocktakeId]);
+        $this->assertDatabaseHas('missing_item_reports', ['id' => $reportId, 'status' => 'RESOLVED']);
+    }
+
+    public function test_short_stocktake_immediately_excludes_missing_quantity_from_available_inventory(): void
     {
         $admin = User::factory()->admin()->create();
         $supplier = Supplier::factory()->create();
@@ -30,7 +103,11 @@ class StocktakeApiTest extends TestCase
 
         $report = $this->getJson('/api/missing-item-reports?status=OPEN')->assertOk()->json('data.0');
         $this->assertSame(2, $report['missing_qty']);
-        $this->getJson('/api/inventories')->assertOk()->assertJsonPath('data.0.qty_available', 5);
+        $this->getJson('/api/inventories')
+            ->assertOk()
+            ->assertJsonPath('data.0.qty_available', 3)
+            ->assertJsonPath('data.0.qty_missing_under_review', 2)
+            ->assertJsonPath('data.0.has_missing_under_review', true);
 
         $this->patchJson('/api/missing-item-reports/'.$report['id'].'/resolve', ['resolution_type' => 'WRITE_OFF', 'resolution_notes' => 'Count rechecked; no dispatch record exists.'])->assertOk();
         $this->getJson('/api/inventories')->assertOk()->assertJsonPath('data.0.qty_available', 3);
@@ -52,5 +129,15 @@ class StocktakeApiTest extends TestCase
         $lineId = (int) $stocktake->json('data.lines.0.id');
         $this->postJson('/api/stocktakes/'.$stocktake->json('data.id').'/submit', ['lines' => [['line_id' => $lineId, 'counted_qty' => 0, 'counted_stock_item_ids' => []]]])->assertOk();
         $this->assertDatabaseHas('missing_item_reports', ['product_id' => $product->id, 'stock_item_id' => $stockItemId, 'missing_qty' => 1, 'status' => 'OPEN']);
+        $this->getJson('/api/inventories')
+            ->assertOk()
+            ->assertJsonPath('data.0.qty_available', 0)
+            ->assertJsonPath('data.0.qty_missing_under_review', 1)
+            ->assertJsonPath('data.0.has_missing_under_review', true);
+        $this->getJson('/api/inventories/'.$product->id.'?serial_status=MISSING_UNDER_REVIEW')
+            ->assertOk()
+            ->assertJsonPath('meta.serials_pagination.total', 1)
+            ->assertJsonPath('data.serials.0.serial_number', 'STK-SERIAL-001')
+            ->assertJsonPath('data.serials.0.is_missing_under_review', true);
     }
 }

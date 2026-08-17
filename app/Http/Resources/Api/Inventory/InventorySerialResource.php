@@ -20,6 +20,8 @@ final class InventorySerialResource extends JsonResource
             'current_status' => $this->enumValue($this->current_status),
             'qc_status' => $this->enumValue($this->qc_status),
             'received_condition' => $this->received_condition,
+            'is_missing_under_review' => (bool) $this->is_missing_under_review,
+            'missing_report_number' => $this->missing_report_number,
             'last_movement_at' => $this->last_movement_at,
             'stock_in_number' => $this->stock_in_number,
             'stock_in_date' => $this->stock_in_date,

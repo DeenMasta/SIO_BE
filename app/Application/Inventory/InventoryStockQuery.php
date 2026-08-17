@@ -2,6 +2,7 @@
 
 namespace App\Application\Inventory;
 
+use App\Models\MissingItemReport;
 use App\Models\Product;
 use App\Models\StockItem;
 use Illuminate\Database\Eloquent\Builder;
@@ -16,12 +17,24 @@ final class InventoryStockQuery
             ->where('current_status', 'IN_STOCK')
             ->where('is_available', true)
             ->where('qc_status', 'PASSED')
+            ->withoutUnresolvedMissingItemReport()
             ->groupBy('product_id');
 
         $nonSerializedAvailable = DB::table('stock_movements')
             ->selectRaw('product_id')
             ->selectRaw("COALESCE(SUM(CASE WHEN to_status = 'IN_STOCK' THEN qty_in ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status = 'IN_STOCK' THEN qty_out ELSE 0 END), 0) as qty_available_non_serialized")
             ->whereNull('stock_item_id')
+            ->groupBy('product_id');
+
+        $unresolvedMissingShortages = MissingItemReport::query()
+            ->selectRaw('product_id, COALESCE(SUM(missing_qty), 0) as qty_missing_under_review')
+            ->unresolved()
+            ->groupBy('product_id');
+
+        $unresolvedNonSerializedShortages = MissingItemReport::query()
+            ->selectRaw('product_id, COALESCE(SUM(missing_qty), 0) as qty_held_missing')
+            ->whereNull('stock_item_id')
+            ->unresolved()
             ->groupBy('product_id');
 
         $availableQty = $this->availableQtyExpression();
@@ -35,6 +48,12 @@ final class InventoryStockQuery
             })
             ->leftJoinSub($nonSerializedAvailable, 'ns', function ($join): void {
                 $join->on('ns.product_id', '=', 'p.id');
+            })
+            ->leftJoinSub($unresolvedMissingShortages, 'mr', function ($join): void {
+                $join->on('mr.product_id', '=', 'p.id');
+            })
+            ->leftJoinSub($unresolvedNonSerializedShortages, 'mn', function ($join): void {
+                $join->on('mn.product_id', '=', 'p.id');
             })
             ->select([
                 'p.id as product_id',
@@ -56,6 +75,7 @@ final class InventoryStockQuery
                 DB::raw('COALESCE(sb.qty_returned, 0) as qty_returned'),
                 DB::raw('COALESCE(sb.qty_returned_to_supplier, 0) as qty_returned_to_supplier'),
                 DB::raw('COALESCE(sa.qty_available_serialized, 0) as qty_available_serialized'),
+                DB::raw('COALESCE(mr.qty_missing_under_review, 0) as qty_missing_under_review'),
                 DB::raw('sb.last_computed_at'),
                 DB::raw($availableQty.' as qty_available'),
                 DB::raw($this->stockStatusExpression().' as stock_status'),
@@ -107,9 +127,11 @@ final class InventoryStockQuery
             ->orderBy('p.product_code');
     }
 
-    private function availableQtyExpression(): string
+    public function availableQtyExpression(): string
     {
-        return "CASE WHEN p.requires_serial_number = 1 THEN COALESCE(sa.qty_available_serialized, 0) ELSE CASE WHEN ns.qty_available_non_serialized IS NULL THEN COALESCE(sb.qty_in_stock, 0) WHEN ns.qty_available_non_serialized < 0 THEN 0 ELSE ns.qty_available_non_serialized END END";
+        $nonSerializedQty = 'CASE WHEN ns.qty_available_non_serialized IS NULL THEN COALESCE(sb.qty_in_stock, 0) ELSE ns.qty_available_non_serialized END';
+
+        return "CASE WHEN p.requires_serial_number = 1 THEN COALESCE(sa.qty_available_serialized, 0) ELSE CASE WHEN ({$nonSerializedQty} - COALESCE(mn.qty_held_missing, 0)) < 0 THEN 0 ELSE ({$nonSerializedQty} - COALESCE(mn.qty_held_missing, 0)) END END";
     }
 
     private function stockStatusExpression(): string

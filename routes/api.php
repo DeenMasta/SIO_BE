@@ -66,7 +66,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         ->middleware('can:access-staff');
     Route::patch('internal-stock-movements/{id}/return', [InternalStockMovementController::class, 'returnToStock'])
         ->middleware('can:access-staff');
-    Route::apiResource('stocktakes', StocktakeController::class)->only(['index', 'store', 'show'])->middleware('can:access-staff');
+    Route::apiResource('stocktakes', StocktakeController::class)->only(['index', 'store', 'show', 'destroy'])->middleware('can:access-staff');
     Route::post('stocktakes/{id}/submit', [StocktakeController::class, 'submit'])->middleware('can:access-staff');
     Route::apiResource('missing-item-reports', MissingItemReportController::class)->only(['index', 'show'])->middleware('can:access-staff');
     Route::patch('missing-item-reports/{id}/investigate', [MissingItemReportController::class, 'investigate'])->middleware('can:access-staff');

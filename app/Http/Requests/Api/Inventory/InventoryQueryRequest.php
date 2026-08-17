@@ -28,10 +28,13 @@ final class InventoryQueryRequest extends StrictFormRequest
             'serial_page' => ['nullable', 'integer', 'min:1'],
             'serial_per_page' => ['nullable', 'integer', 'min:1', 'max:200'],
             'serial_q' => ['nullable', 'string', 'max:100'],
-            'serial_status' => ['nullable', 'string', Rule::in(array_map(
-                static fn (StockItemStatus $status): string => $status->value,
-                StockItemStatus::cases(),
-            ))],
+            'serial_status' => ['nullable', 'string', Rule::in([
+                ...array_map(
+                    static fn (StockItemStatus $status): string => $status->value,
+                    StockItemStatus::cases(),
+                ),
+                'MISSING_UNDER_REVIEW',
+            ])],
             'movement_page' => ['nullable', 'integer', 'min:1'],
             'movement_per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ];

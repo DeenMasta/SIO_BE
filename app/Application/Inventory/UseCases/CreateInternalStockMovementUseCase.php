@@ -14,6 +14,7 @@ use App\Domain\InventoryCore\Enums\StockItemQcStatus;
 use App\Domain\InventoryCore\Enums\StockItemStatus;
 use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Models\InternalStockMovement;
+use App\Models\MissingItemReport;
 use App\Models\Product;
 use App\Models\StockItem;
 use App\Models\StockMovement;
@@ -85,6 +86,7 @@ class CreateInternalStockMovementUseCase implements UseCase
                         ->where('current_status', StockItemStatus::InStock->value)
                         ->where('is_available', true)
                         ->where('qc_status', StockItemQcStatus::Passed->value)
+                        ->withoutUnresolvedMissingItemReport()
                         ->lockForUpdate()
                         ->get();
 
@@ -138,7 +140,7 @@ class CreateInternalStockMovementUseCase implements UseCase
                     ->first();
 
                 $availableQty = max(
-                    (int) ($movementTotals->qty_in_stock_in ?? 0) - (int) ($movementTotals->qty_in_stock_out ?? 0),
+                    (int) ($movementTotals->qty_in_stock_in ?? 0) - (int) ($movementTotals->qty_in_stock_out ?? 0) - $this->unresolvedNonSerializedShortage((int) $product->id),
                     0,
                 );
 
@@ -209,5 +211,15 @@ class CreateInternalStockMovementUseCase implements UseCase
 
             return $result;
         });
+    }
+
+    private function unresolvedNonSerializedShortage(int $productId): int
+    {
+        return (int) MissingItemReport::query()
+            ->where('product_id', $productId)
+            ->whereNull('stock_item_id')
+            ->unresolved()
+            ->lockForUpdate()
+            ->sum('missing_qty');
     }
 }

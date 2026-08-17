@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Inventory;
 
 use App\Application\Inventory\UseCases\CreateStocktakeUseCase;
+use App\Application\Inventory\UseCases\DeleteStocktakeUseCase;
 use App\Application\Inventory\UseCases\SubmitStocktakeUseCase;
 use App\Application\Support\ApiResponse;
 use App\Http\Controllers\Controller;
@@ -15,7 +16,11 @@ use Illuminate\Http\Request;
 
 class StocktakeController extends Controller
 {
-    public function __construct(private readonly CreateStocktakeUseCase $createStocktake, private readonly SubmitStocktakeUseCase $submitStocktake) {}
+    public function __construct(
+        private readonly CreateStocktakeUseCase $createStocktake,
+        private readonly SubmitStocktakeUseCase $submitStocktake,
+        private readonly DeleteStocktakeUseCase $deleteStocktake,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -48,6 +53,21 @@ class StocktakeController extends Controller
         $result = $this->submitStocktake->execute([...$request->validated(), 'stocktake_id' => $stocktake->id, 'submitted_by' => (int) $request->user()->id]);
 
         return ApiResponse::success(new StocktakeResource($result), 'Stocktake submitted. Shortages have been opened as investigation reports.');
+    }
+
+    public function destroy(Stocktake $stocktake, Request $request): JsonResponse
+    {
+        $this->authorize('delete', $stocktake);
+        $deletedReports = $this->deleteStocktake->execute([
+            'stocktake_id' => (int) $stocktake->id,
+            'deleted_by' => (int) $request->user()->id,
+        ]);
+
+        $message = $deletedReports > 0
+            ? 'Stocktake and its unresolved missing-item reports deleted successfully.'
+            : 'Stocktake deleted successfully.';
+
+        return ApiResponse::success(null, $message);
     }
 
     private function stocktakeDetail(int $id): Stocktake

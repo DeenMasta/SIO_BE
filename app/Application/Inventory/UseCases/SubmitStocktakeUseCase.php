@@ -3,6 +3,7 @@
 namespace App\Application\Inventory\UseCases;
 
 use App\Application\Contracts\UseCase;
+use App\Application\Inventory\LowStockAlertService;
 use App\Application\Support\AuditLogger;
 use App\Application\Support\DocumentNumberGenerator;
 use App\Application\Support\UserNotificationService;
@@ -16,7 +17,12 @@ use Illuminate\Validation\ValidationException;
 
 final class SubmitStocktakeUseCase implements UseCase
 {
-    public function __construct(private readonly DocumentNumberGenerator $numbers, private readonly AuditLogger $auditLogger, private readonly UserNotificationService $notifications) {}
+    public function __construct(
+        private readonly DocumentNumberGenerator $numbers,
+        private readonly AuditLogger $auditLogger,
+        private readonly UserNotificationService $notifications,
+        private readonly LowStockAlertService $lowStock,
+    ) {}
 
     public function execute(mixed $payload = null): Stocktake
     {
@@ -28,12 +34,15 @@ final class SubmitStocktakeUseCase implements UseCase
                 throw ValidationException::withMessages(['stocktake' => ['Only a stocktake in COUNTING status can be submitted.']]);
             }
 
+            $beforeLowStockSnapshot = $this->lowStock->snapshotForProducts($stocktake->lines->pluck('product_id')->all());
+
             $submittedLines = collect($data['lines'])->keyBy(fn (array $line) => (int) $line['line_id']);
             if ($submittedLines->count() !== $stocktake->lines->count() || $stocktake->lines->contains(fn ($line) => ! $submittedLines->has($line->id))) {
                 throw ValidationException::withMessages(['lines' => ['A count is required for every stocktake line.']]);
             }
 
             $shortages = 0;
+            $shortageProductIds = [];
             foreach ($stocktake->lines as $line) {
                 $input = $submittedLines->get($line->id);
                 $countedQty = (int) $input['counted_qty'];
@@ -60,6 +69,7 @@ final class SubmitStocktakeUseCase implements UseCase
                 }
 
                 $shortages += abs($variance);
+                $shortageProductIds[] = (int) $line->product_id;
                 if ($isSerialized) {
                     $line->items->whereIn('stock_item_id', $missingIds)->each(function ($item) use ($stocktake, $line, $data): void {
                         MissingItemReport::query()->create([
@@ -89,6 +99,7 @@ final class SubmitStocktakeUseCase implements UseCase
             $stocktake->update(['status' => StocktakeStatus::Submitted, 'submitted_by' => $data['submitted_by'], 'submitted_at' => now()]);
             $this->auditLogger->log((int) $data['submitted_by'], 'StockManagement', 'Stocktake', (int) $stocktake->id, AuditAction::Post, newValues: ['shortage_qty' => $shortages]);
             if ($shortages > 0) {
+                $this->lowStock->notifyStatusTransitions($beforeLowStockSnapshot, array_values(array_unique($shortageProductIds)), (int) $data['submitted_by']);
                 $this->notifications->notifyAllActiveUsers('stocktake.shortage-reported', 'Stocktake shortages need investigation', "{$shortages} unit(s) were missing in stocktake {$stocktake->stocktake_number}.", ['stocktake_id' => $stocktake->id, 'shortage_qty' => $shortages], (int) $data['submitted_by'], 'warning');
             }
 
