@@ -5,9 +5,9 @@ namespace Tests\Feature;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\SaleOrderLine;
+use App\Models\StockMovement;
 use App\Models\StockOut;
 use App\Models\StockOutLine;
-use App\Models\StockMovement;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -418,6 +418,96 @@ class SalesOutboundApiTest extends TestCase
             'fulfilled_qty' => 2,
             'unit_price' => 12,
             'subtotal' => 72,
+        ]);
+    }
+
+    public function test_removing_an_unfulfilled_addon_line_restores_a_fulfilled_sale_order_status(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create([
+            'product_code' => 'FULFILLED-ADDON-UNDO-001',
+            'product_type' => 'CONSUMABLE',
+            'requires_serial_number' => false,
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        StockMovement::query()->create([
+            'movement_datetime' => now(),
+            'product_id' => $product->id,
+            'stock_item_id' => null,
+            'movement_type' => 'STOCK_IN',
+            'reference_table' => 'test_seed',
+            'reference_id' => 1301,
+            'qty_in' => 2,
+            'qty_out' => 0,
+            'to_status' => 'IN_STOCK',
+            'performed_by' => $admin->id,
+        ]);
+
+        $saleOrder = $this->postJson('/api/sale-orders', [
+            'so_number' => 'SO-FULFILLED-ADDON-UNDO-001',
+            'so_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'invoice_number' => 'INV-FULFILLED-ADDON-UNDO-001',
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 1,
+                'unit_price' => 10,
+            ]],
+        ])->assertCreated();
+
+        $saleOrderId = (int) $saleOrder->json('data.id');
+        $originalLineId = (int) $saleOrder->json('data.lines.0.id');
+
+        $this->patchJson('/api/sale-orders/'.$saleOrderId.'/confirm')->assertOk();
+
+        $this->postJson('/api/stock-outs', [
+            'sale_order_id' => $saleOrderId,
+            'stock_out_number' => 'SOUT-FULFILLED-ADDON-UNDO-001',
+            'idempotency_key' => 'idem-fulfilled-addon-undo-001',
+            'stock_out_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'sale_order_line_id' => $originalLineId,
+                'qty' => 1,
+            ]],
+        ])->assertCreated()
+            ->assertJsonPath('data.status', 'POSTED');
+
+        $this->assertDatabaseHas('sale_orders', [
+            'id' => $saleOrderId,
+            'status' => 'FULFILLED',
+        ]);
+
+        $this->postJson('/api/sale-orders/'.$saleOrderId.'/addon-lines', [
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 1,
+                'unit_price' => 10,
+            ]],
+        ])->assertOk()
+            ->assertJsonPath('data.status', 'CONFIRMED');
+
+        $this->patchJson('/api/sale-orders/'.$saleOrderId, [
+            'so_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'invoice_number' => 'INV-FULFILLED-ADDON-UNDO-001',
+            'lines' => [[
+                'id' => $originalLineId,
+                'product_id' => $product->id,
+                'ordered_qty' => 1,
+                'unit_price' => 10,
+            ]],
+        ])->assertOk()
+            ->assertJsonPath('data.status', 'FULFILLED')
+            ->assertJsonCount(1, 'data.lines');
+
+        $this->assertDatabaseHas('sale_orders', [
+            'id' => $saleOrderId,
+            'status' => 'FULFILLED',
         ]);
     }
 

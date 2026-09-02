@@ -25,7 +25,10 @@ class PurchasingInboundApiTest extends TestCase
         $admin = User::factory()->admin()->create();
         $staff = User::factory()->staff()->create();
         $supplier = Supplier::factory()->create();
-        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+        $product = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -33,7 +36,6 @@ class PurchasingInboundApiTest extends TestCase
             'po_number' => 'PO-100001',
             'po_date' => now()->toDateString(),
             'supplier_id' => $supplier->id,
-            'status' => 'DRAFT',
             'lines' => [
                 [
                     'product_id' => $product->id,
@@ -56,7 +58,10 @@ class PurchasingInboundApiTest extends TestCase
     {
         $staff = User::factory()->staff()->create();
         $supplier = Supplier::factory()->create();
-        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+        $product = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
 
         Sanctum::actingAs($staff, ['staff-access']);
 
@@ -175,8 +180,14 @@ class PurchasingInboundApiTest extends TestCase
         $admin = User::factory()->admin()->create();
         $staff = User::factory()->staff()->create();
         $supplier = Supplier::factory()->create();
-        $productOne = Product::factory()->create(['product_type' => 'CONSUMABLE']);
-        $productTwo = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+        $productOne = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
+        $productTwo = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -235,7 +246,10 @@ class PurchasingInboundApiTest extends TestCase
         $admin = User::factory()->admin()->create();
         $staff = User::factory()->staff()->create();
         $supplier = Supplier::factory()->create();
-        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+        $product = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -266,7 +280,10 @@ class PurchasingInboundApiTest extends TestCase
     {
         $admin = User::factory()->admin()->create();
         $supplier = Supplier::factory()->create();
-        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+        $product = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -300,11 +317,120 @@ class PurchasingInboundApiTest extends TestCase
             ->assertJsonPath('status', 'error');
     }
 
+    public function test_purchase_order_creation_rejects_status_override_and_product_from_another_supplier(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $otherSupplier = Supplier::factory()->create();
+        $matchingProduct = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
+        $otherSupplierProduct = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $otherSupplier->id,
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->postJson('/api/purchase-orders', [
+            'po_number' => 'PO-STATUS-OVERRIDE-001',
+            'po_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'status' => 'COMPLETED',
+            'lines' => [[
+                'product_id' => $matchingProduct->id,
+                'ordered_qty' => 1,
+                'unit_price' => 10,
+            ]],
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['payload']);
+
+        $this->postJson('/api/purchase-orders', [
+            'po_number' => 'PO-SUPPLIER-MISMATCH-001',
+            'po_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $otherSupplierProduct->id,
+                'ordered_qty' => 1,
+                'unit_price' => 10,
+            ]],
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['lines']);
+    }
+
+    public function test_partial_purchase_order_cannot_be_edited_or_lose_its_receipt_link(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $purchaseOrder = $this->postJson('/api/purchase-orders', [
+            'po_number' => 'PO-PARTIAL-IMMUTABLE-001',
+            'po_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 2,
+                'unit_price' => 10,
+            ]],
+        ])->assertCreated();
+
+        $purchaseOrderId = (int) $purchaseOrder->json('data.id');
+        $purchaseOrderLineId = (int) $purchaseOrder->json('data.lines.0.id');
+        $this->patchJson('/api/purchase-orders/'.$purchaseOrderId.'/issue')->assertOk();
+
+        $stockIn = $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-PARTIAL-IMMUTABLE-001',
+            'stock_in_date' => now()->toDateString(),
+            'purchase_order_id' => $purchaseOrderId,
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'purchase_order_line_id' => $purchaseOrderLineId,
+                'received_qty' => 1,
+            ]],
+        ])->assertCreated();
+
+        $stockInLineId = (int) $stockIn->json('data.lines.0.id');
+
+        $this->patchJson('/api/purchase-orders/'.$purchaseOrderId, [
+            'po_date' => now()->addDay()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 3,
+                'unit_price' => 12,
+            ]],
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['status']);
+
+        $this->assertDatabaseHas('purchase_orders', [
+            'id' => $purchaseOrderId,
+            'status' => 'PARTIAL',
+        ]);
+        $this->assertDatabaseHas('purchase_order_lines', [
+            'id' => $purchaseOrderLineId,
+            'received_qty' => 1,
+        ]);
+        $this->assertDatabaseHas('stock_in_lines', [
+            'id' => $stockInLineId,
+            'purchase_order_line_id' => $purchaseOrderLineId,
+        ]);
+    }
+
     public function test_stock_in_tracks_partial_receive_then_auto_completes_po(): void
     {
         $admin = User::factory()->admin()->create();
         $supplier = Supplier::factory()->create();
-        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+        $product = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -375,7 +501,10 @@ class PurchasingInboundApiTest extends TestCase
     {
         $supplier = Supplier::factory()->create();
         $user = User::factory()->create();
-        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+        $product = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
         $purchaseOrder = PurchaseOrder::factory()->create([
             'supplier_id' => $supplier->id,
             'status' => 'PARTIAL',
@@ -433,7 +562,10 @@ class PurchasingInboundApiTest extends TestCase
     {
         $admin = User::factory()->admin()->create();
         $supplier = Supplier::factory()->create();
-        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+        $product = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -472,7 +604,10 @@ class PurchasingInboundApiTest extends TestCase
     {
         $admin = User::factory()->admin()->create();
         $supplier = Supplier::factory()->create();
-        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+        $product = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -596,12 +731,79 @@ class PurchasingInboundApiTest extends TestCase
         ]);
         $this->assertDatabaseHas('purchase_orders', [
             'id' => $purchaseOrder->id,
-            'status' => 'ISSUED',
+            'status' => 'PARTIAL',
         ]);
         $this->assertDatabaseHas('stock_balances', [
             'product_id' => $product->id,
             'qty_in_stock' => 5,
         ]);
+    }
+
+    public function test_delete_obsolete_nonserialized_stock_in_lines_command_refuses_to_remove_dispatched_stock(): void
+    {
+        $supplier = Supplier::factory()->create();
+        $user = User::factory()->create();
+        $product = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'requires_serial_number' => false,
+            'supplier_id' => $supplier->id,
+        ]);
+        $stockIn = StockIn::factory()->create([
+            'supplier_id' => $supplier->id,
+            'stock_in_pic_id' => $user->id,
+        ]);
+        $stockInLine = StockInLine::query()->create([
+            'stock_in_id' => $stockIn->id,
+            'product_id' => $product->id,
+            'received_qty' => 2,
+        ]);
+
+        StockMovement::query()->create([
+            'movement_datetime' => now(),
+            'product_id' => $product->id,
+            'stock_item_id' => null,
+            'movement_type' => 'STOCK_IN',
+            'reference_table' => 'stock_in_lines',
+            'reference_id' => $stockInLine->id,
+            'qty_in' => 2,
+            'qty_out' => 0,
+            'to_status' => 'IN_STOCK',
+            'performed_by' => $user->id,
+        ]);
+        StockMovement::query()->create([
+            'movement_datetime' => now(),
+            'product_id' => $product->id,
+            'stock_item_id' => null,
+            'movement_type' => 'STOCK_OUT',
+            'reference_table' => 'test_stock_out',
+            'reference_id' => 1,
+            'qty_in' => 0,
+            'qty_out' => 2,
+            'from_status' => 'IN_STOCK',
+            'to_status' => 'DELIVERED',
+            'performed_by' => $user->id,
+        ]);
+
+        $this->artisan('inventory:delete-obsolete-nonserialized-stock-in-lines', [
+            'stock_in_id' => $stockIn->id,
+            '--stock-in-line-id' => [$stockInLine->id],
+            '--yes' => true,
+        ])->assertExitCode(1);
+
+        $this->assertDatabaseHas('stock_in_lines', ['id' => $stockInLine->id]);
+        $this->assertDatabaseHas('stock_movements', [
+            'reference_table' => 'stock_in_lines',
+            'reference_id' => $stockInLine->id,
+        ]);
+    }
+
+    public function test_unsafe_po_product_correction_command_is_disabled(): void
+    {
+        $this->artisan('sio:correct-po-product', [
+            'po_number' => 'PO-NOT-RUN',
+            'old_product_id' => 1,
+            'new_product_id' => 2,
+        ])->assertExitCode(1);
     }
 
     public function test_purchase_order_show_includes_remaining_qty_and_product_details(): void
@@ -612,6 +814,7 @@ class PurchasingInboundApiTest extends TestCase
             'product_code' => 'DEV-PO-DETAIL',
             'product_name' => 'PO Detail Device',
             'product_type' => 'DEVICE',
+            'supplier_id' => $supplier->id,
         ]);
 
         Sanctum::actingAs($admin, ['admin-access']);
@@ -658,7 +861,10 @@ class PurchasingInboundApiTest extends TestCase
             'supplier_code' => 'SUP-EXP',
             'supplier_name' => 'Export Supplier',
         ]);
-        $product = Product::factory()->create(['product_type' => 'CONSUMABLE']);
+        $product = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
 
         Sanctum::actingAs($admin, ['admin-access']);
 
@@ -666,7 +872,6 @@ class PurchasingInboundApiTest extends TestCase
             'po_number' => 'PO-EXPORT-001',
             'po_date' => now()->toDateString(),
             'supplier_id' => $supplier->id,
-            'status' => 'DRAFT',
             'remarks' => 'Urgent replenishment',
             'lines' => [[
                 'product_id' => $product->id,

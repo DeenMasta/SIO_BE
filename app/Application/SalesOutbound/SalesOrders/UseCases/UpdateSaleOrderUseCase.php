@@ -10,9 +10,7 @@ use Illuminate\Validation\ValidationException;
 
 class UpdateSaleOrderUseCase implements UseCase
 {
-    public function __construct(private readonly SaleOrderRepository $saleOrders)
-    {
-    }
+    public function __construct(private readonly SaleOrderRepository $saleOrders) {}
 
     public function execute(mixed $payload = null): SaleOrder
     {
@@ -33,6 +31,24 @@ class UpdateSaleOrderUseCase implements UseCase
             ]);
         }
 
-        return $this->saleOrders->update($saleOrder, $data);
+        $updated = $this->saleOrders->update($saleOrder, $data);
+
+        // Addon lines move a fulfilled order back to CONFIRMED so they can be
+        // dispatched. If those unfulfilled lines are subsequently removed,
+        // restore FULFILLED once every remaining line is fully dispatched.
+        if ($updated->status === SaleOrderStatus::Confirmed && array_key_exists('lines', $data)) {
+            $allLinesFulfilled = $updated->lines->isNotEmpty()
+                && $updated->lines->every(
+                    static fn ($line): bool => (int) $line->fulfilled_qty >= (int) $line->ordered_qty,
+                );
+
+            if ($allLinesFulfilled) {
+                $updated->status = SaleOrderStatus::Fulfilled;
+                $updated->save();
+                $updated->load('lines.product');
+            }
+        }
+
+        return $updated;
     }
 }

@@ -6,11 +6,11 @@ use App\Application\PurchasingInbound\PurchaseOrders\UseCases\CreatePurchaseOrde
 use App\Application\PurchasingInbound\PurchaseOrders\UseCases\DeletePurchaseOrderUseCase;
 use App\Application\PurchasingInbound\PurchaseOrders\UseCases\ListPurchaseOrdersUseCase;
 use App\Application\PurchasingInbound\PurchaseOrders\UseCases\UpdatePurchaseOrderUseCase;
-use App\Application\Support\AuditLogger;
+use App\Application\ReportingAudit\Reports\Services\ExportService;
 use App\Application\Support\ApiResponse;
+use App\Application\Support\AuditLogger;
 use App\Application\Support\DocumentNumberGenerator;
 use App\Application\Support\UserNotificationService;
-use App\Application\ReportingAudit\Reports\Services\ExportService;
 use App\Domain\PurchasingInbound\Enums\PurchaseOrderStatus;
 use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Http\Controllers\Controller;
@@ -36,8 +36,7 @@ class PurchaseOrderController extends Controller
         private readonly DocumentNumberGenerator $documentNumberGenerator,
         private readonly ExportService $exportService,
         private readonly UserNotificationService $userNotificationService,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -68,7 +67,7 @@ class PurchaseOrderController extends Controller
         $payload = $request->validated();
         $userId = (int) $request->user()->id;
         $payload['created_by'] = $userId;
-        $payload['status'] = $payload['status'] ?? PurchaseOrderStatus::Draft;
+        $payload['status'] = PurchaseOrderStatus::Draft;
         $payload['po_number'] = trim((string) ($payload['po_number'] ?? '')) !== ''
             ? trim((string) $payload['po_number'])
             : $this->documentNumberGenerator->generatePurchaseOrderNumber();

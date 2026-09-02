@@ -37,23 +37,13 @@ Repair every PO (use only after a backup):
 php artisan purchase-orders:recalculate-receipts
 ```
 
-### Correct a PO product and its linked records
+### Deprecated PO product correction command
 
-Updates a PO line's product and cascades the change to linked stock-in, stock-item, stock-movement, and return-to-supplier records.
-
-```powershell
-php artisan sio:correct-po-product <po-number> <old-product-id> <new-product-id>
-```
-
-Example:
-
-```powershell
-php artisan sio:correct-po-product PO-000123 15 28
-```
+`sio:correct-po-product` is disabled. It could leave stock movements, sales, stock-outs, or returns inconsistent. Use one of the scoped correction commands below instead.
 
 ### Delete obsolete non-serialized stock-in lines
 
-Deletes explicitly selected non-serialized stock-in lines, their inbound movements, and recalculates affected stock balances and PO receipt totals. It cannot delete serialized lines, lines with stock items, or lines linked to return-to-supplier records.
+Deletes explicitly selected non-serialized stock-in lines, their inbound movements, and recalculates affected stock balances and PO receipt totals. It cannot delete serialized lines, lines with stock items, lines linked to return-to-supplier records, or a receipt whose removal would make available stock negative. Correct or reverse the related stock out first.
 
 ```powershell
 php artisan inventory:delete-obsolete-nonserialized-stock-in-lines <stock-in-id> --stock-in-line-id=<line-id>

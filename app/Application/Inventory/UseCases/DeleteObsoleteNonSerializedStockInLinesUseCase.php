@@ -13,6 +13,7 @@ use App\Models\StockIn;
 use App\Models\StockInLine;
 use App\Models\StockItem;
 use App\Models\StockMovement;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -20,8 +21,7 @@ class DeleteObsoleteNonSerializedStockInLinesUseCase implements UseCase
 {
     public function __construct(
         private readonly StockBalanceUpdater $stockBalanceUpdater,
-    ) {
-    }
+    ) {}
 
     /**
      * @param  array{
@@ -59,7 +59,7 @@ class DeleteObsoleteNonSerializedStockInLinesUseCase implements UseCase
                 ->lockForUpdate()
                 ->findOrFail($stockInId);
 
-            /** @var \Illuminate\Support\Collection<int, StockInLine> $lines */
+            /** @var Collection<int, StockInLine> $lines */
             $lines = StockInLine::query()
                 ->with('product')
                 ->where('stock_in_id', $stockInId)
@@ -71,6 +71,25 @@ class DeleteObsoleteNonSerializedStockInLinesUseCase implements UseCase
                 throw ValidationException::withMessages([
                     'stock_in_line_id' => ['Some selected stock in lines do not belong to the given stock in header.'],
                 ]);
+            }
+
+            $removalQtyByProduct = $lines
+                ->groupBy('product_id')
+                ->map(static fn ($productLines): int => (int) $productLines->sum('received_qty'));
+
+            foreach ($removalQtyByProduct as $productId => $removalQty) {
+                $availableQty = $this->availableNonSerializedQtyForUpdate((int) $productId);
+
+                if ($availableQty < $removalQty) {
+                    throw ValidationException::withMessages([
+                        'stock_in_line_id' => [sprintf(
+                            'Cannot delete the selected stock in line(s): product %d has %d unit(s) available, but %d inbound unit(s) would be removed. Correct or reverse the related stock out first.',
+                            $productId,
+                            $availableQty,
+                            $removalQty,
+                        )],
+                    ]);
+                }
             }
 
             $affectedProductIds = [];
@@ -151,6 +170,10 @@ class DeleteObsoleteNonSerializedStockInLinesUseCase implements UseCase
                     continue;
                 }
 
+                if (in_array($purchaseOrder->status, [PurchaseOrderStatus::Draft, PurchaseOrderStatus::Cancelled], true)) {
+                    continue;
+                }
+
                 $isCompleted = $purchaseOrder->lines->isNotEmpty()
                     && $purchaseOrder->lines->every(
                         static fn (PurchaseOrderLine $line): bool => (int) $line->received_qty >= (int) $line->ordered_qty,
@@ -183,5 +206,15 @@ class DeleteObsoleteNonSerializedStockInLinesUseCase implements UseCase
                 'deleted_empty_stock_in' => $deleteEmptyHeader,
             ];
         });
+    }
+
+    private function availableNonSerializedQtyForUpdate(int $productId): int
+    {
+        return (int) StockMovement::query()
+            ->whereNull('stock_item_id')
+            ->where('product_id', $productId)
+            ->lockForUpdate()
+            ->selectRaw("COALESCE(SUM(CASE WHEN to_status IN ('IN_STOCK', 'RECEIVED') THEN CASE WHEN qty_in > qty_out THEN qty_in ELSE qty_out END ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN from_status IN ('IN_STOCK', 'RECEIVED') THEN CASE WHEN qty_in > qty_out THEN qty_in ELSE qty_out END ELSE 0 END), 0) as qty_available")
+            ->value('qty_available');
     }
 }

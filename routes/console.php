@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -247,7 +248,13 @@ Artisan::command(
             }
         }
 
-        $result = app(DeleteObsoleteNonSerializedStockInLinesUseCase::class)->execute($payload);
+        try {
+            $result = app(DeleteObsoleteNonSerializedStockInLinesUseCase::class)->execute($payload);
+        } catch (ValidationException $exception) {
+            $this->error(collect($exception->errors())->flatten()->implode(' '));
+
+            return self::FAILURE;
+        }
 
         $this->table(
             ['Field', 'Value'],
