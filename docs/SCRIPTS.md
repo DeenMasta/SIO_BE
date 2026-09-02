@@ -91,6 +91,16 @@ php artisan inventory:correct-product-chain <purchase-order-line-id> <stock-in-l
 
 Optional sale-order/stock-out IDs and corrected dates are available; run `--help` before using it. Add `--yes` only to skip its confirmation.
 
+### Replace a wrong non-serialized dispatch with a serialized item
+
+Use this only when a wrong non-serialized product was received and dispatched, the correct serialized product is already in stock, and the wrong PO and stock-in lines must be removed. The command changes the linked sales-order and stock-out lines, assigns the selected replacement serial, removes the wrong stock-in and PO lines, recalculates balances, and records an audit entry.
+
+```powershell
+php artisan inventory:replace-dispatch-and-remove-wrong-inbound <sale-order-line-id> <stock-out-line-id> <wrong-stock-in-line-id> <wrong-po-line-id> <replacement-stock-item-id> --performed-by=<user-id>
+```
+
+It refuses unsafe cases, including partially fulfilled sales orders, multiple linked stock-out lines, returns/exchanges, already-used replacement serials, or wrong inbound lines that have serialized stock items. Omit `--yes` to keep the confirmation prompt.
+
 ## Inventory
 
 ### Correct available quantity for a non-serialized product
