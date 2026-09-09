@@ -28,9 +28,9 @@ class UpdatePurchaseOrderUseCase implements UseCase
                 ->lockForUpdate()
                 ->findOrFail($id);
 
-            if (! in_array($purchaseOrder->status, [PurchaseOrderStatus::Draft, PurchaseOrderStatus::Partial], true)) {
+            if (! in_array($purchaseOrder->status, [PurchaseOrderStatus::Draft, PurchaseOrderStatus::Issued, PurchaseOrderStatus::Partial], true)) {
                 throw ValidationException::withMessages([
-                    'status' => ['Only DRAFT or PARTIAL purchase orders can be updated.'],
+                    'status' => ['Only DRAFT, ISSUED, or PARTIAL purchase orders can be updated.'],
                 ]);
             }
 
@@ -38,6 +38,8 @@ class UpdatePurchaseOrderUseCase implements UseCase
 
             if ($wasPartial) {
                 $this->validatePartialUpdate($purchaseOrder, $data);
+            } elseif ($purchaseOrder->status === PurchaseOrderStatus::Issued) {
+                $this->validateIssuedUpdate($purchaseOrder);
             }
 
             $this->productSupplierValidator->validate((int) $data['supplier_id'], $data['lines']);
@@ -58,6 +60,24 @@ class UpdatePurchaseOrderUseCase implements UseCase
             && $purchaseOrder->lines->every(
                 static fn (\App\Models\PurchaseOrderLine $line): bool => (int) $line->received_qty >= (int) $line->ordered_qty,
             );
+    }
+
+    /**
+     * An ISSUED PO is updated using the draft-style line replacement path, so
+     * it must be receipt-free. Posted receipts normally move a PO to PARTIAL;
+     * this guard protects against inconsistent legacy records.
+     */
+    private function validateIssuedUpdate(PurchaseOrder $purchaseOrder): void
+    {
+        $hasReceipt = $purchaseOrder->lines->contains(
+            static fn (\App\Models\PurchaseOrderLine $line): bool => (int) $line->received_qty > 0 || $line->stockInLines->isNotEmpty(),
+        );
+
+        if ($hasReceipt) {
+            throw ValidationException::withMessages([
+                'status' => ['This ISSUED purchase order has receipt records and cannot replace its lines. Restore its correct PARTIAL status first.'],
+            ]);
+        }
     }
 
     /**

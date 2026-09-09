@@ -276,7 +276,7 @@ class PurchasingInboundApiTest extends TestCase
         );
     }
 
-    public function test_purchase_order_update_rejects_issued_orders(): void
+    public function test_purchase_order_update_replaces_lines_when_issued_without_receipts(): void
     {
         $admin = User::factory()->admin()->create();
         $supplier = Supplier::factory()->create();
@@ -313,8 +313,62 @@ class PurchasingInboundApiTest extends TestCase
                     'unit_price' => 12,
                 ],
             ],
+        ])->assertOk()
+            ->assertJsonPath('data.status', 'ISSUED')
+            ->assertJsonPath('data.lines.0.product_id', $product->id)
+            ->assertJsonPath('data.lines.0.ordered_qty', 3)
+            ->assertJsonPath('data.lines.0.unit_price', '12.00');
+    }
+
+    public function test_issued_purchase_order_with_receipts_cannot_replace_its_lines(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $purchaseOrder = $this->postJson('/api/purchase-orders', [
+            'po_number' => 'PO-ISSUED-WITH-RECEIPT-001',
+            'po_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 2,
+                'unit_price' => 10,
+            ]],
+        ])->assertCreated();
+
+        $purchaseOrderId = (int) $purchaseOrder->json('data.id');
+        $purchaseOrderLineId = (int) $purchaseOrder->json('data.lines.0.id');
+        $this->patchJson('/api/purchase-orders/'.$purchaseOrderId.'/issue')->assertOk();
+
+        $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-ISSUED-WITH-RECEIPT-001',
+            'stock_in_date' => now()->toDateString(),
+            'purchase_order_id' => $purchaseOrderId,
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'purchase_order_line_id' => $purchaseOrderLineId,
+                'received_qty' => 1,
+            ]],
+        ])->assertCreated();
+
+        PurchaseOrder::query()->whereKey($purchaseOrderId)->update(['status' => 'ISSUED']);
+
+        $this->patchJson('/api/purchase-orders/'.$purchaseOrderId, [
+            'po_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 3,
+                'unit_price' => 10,
+            ]],
         ])->assertUnprocessable()
-            ->assertJsonPath('status', 'error');
+            ->assertJsonValidationErrors(['status']);
     }
 
     public function test_purchase_order_creation_rejects_status_override_and_product_from_another_supplier(): void
