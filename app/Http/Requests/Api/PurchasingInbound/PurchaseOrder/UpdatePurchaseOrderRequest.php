@@ -22,6 +22,7 @@ class UpdatePurchaseOrderRequest extends StrictFormRequest
             'expected_delivery_date' => ['nullable', 'date'],
             'remarks' => ['nullable', 'string', 'max:2000'],
             'lines' => ['required', 'array', 'min:1'],
+            'lines.*.id' => ['nullable', 'integer', 'exists:purchase_order_lines,id'],
             'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'lines.*.ordered_qty' => ['required', 'integer', 'min:1'],
             'lines.*.unit_price' => ['required', 'numeric', 'min:0'],

@@ -3,6 +3,7 @@
 namespace App\Infrastructure\Persistence\Eloquent\Repositories;
 
 use App\Application\Contracts\Repositories\PurchaseOrderRepository;
+use App\Domain\PurchasingInbound\Enums\PurchaseOrderStatus;
 use App\Models\PurchaseOrder;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
@@ -48,9 +49,15 @@ class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
             unset($data['lines']);
 
             $purchaseOrder->update($data);
+
+            if ($purchaseOrder->status === PurchaseOrderStatus::Partial) {
+                return $this->updatePartialLines($purchaseOrder, $lines);
+            }
+
             $purchaseOrder->lines()->delete();
 
             foreach ($lines as $line) {
+                unset($line['id']);
                 $line['subtotal'] = (float) $line['ordered_qty'] * (float) $line['unit_price'];
                 $line['received_qty'] = 0;
                 $purchaseOrder->lines()->create($line);
@@ -58,6 +65,49 @@ class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
 
             return $purchaseOrder->fresh('lines.product');
         });
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $lines
+     */
+    private function updatePartialLines(PurchaseOrder $purchaseOrder, array $lines): PurchaseOrder
+    {
+        $existingLines = $purchaseOrder->lines()->get()->keyBy('id');
+        $submittedLineIds = [];
+
+        foreach ($lines as $line) {
+            $lineId = (int) ($line['id'] ?? 0);
+            unset($line['id']);
+            $line['subtotal'] = (float) $line['ordered_qty'] * (float) $line['unit_price'];
+
+            if ($lineId === 0) {
+                $line['received_qty'] = 0;
+                $purchaseOrder->lines()->create($line);
+
+                continue;
+            }
+
+            $existingLine = $existingLines->get($lineId);
+            if ($existingLine === null) {
+                continue;
+            }
+
+            $existingLine->update($line);
+            $submittedLineIds[] = $lineId;
+        }
+
+        $removedLineIds = array_values(array_diff(
+            $existingLines->keys()->map(static fn (mixed $id): int => (int) $id)->all(),
+            $submittedLineIds,
+        ));
+
+        if ($removedLineIds !== []) {
+            $purchaseOrder->lines()
+                ->whereIn('id', $removedLineIds)
+                ->delete();
+        }
+
+        return $purchaseOrder->fresh('lines.product');
     }
 
     public function delete(PurchaseOrder $purchaseOrder): void

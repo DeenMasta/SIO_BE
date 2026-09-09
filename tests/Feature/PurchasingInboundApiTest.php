@@ -276,7 +276,7 @@ class PurchasingInboundApiTest extends TestCase
         );
     }
 
-    public function test_purchase_order_update_rejects_non_draft_orders(): void
+    public function test_purchase_order_update_rejects_issued_orders(): void
     {
         $admin = User::factory()->admin()->create();
         $supplier = Supplier::factory()->create();
@@ -359,11 +359,15 @@ class PurchasingInboundApiTest extends TestCase
             ->assertJsonValidationErrors(['lines']);
     }
 
-    public function test_partial_purchase_order_cannot_be_edited_or_lose_its_receipt_link(): void
+    public function test_partial_purchase_order_can_be_safely_edited_and_add_unreceived_lines(): void
     {
         $admin = User::factory()->admin()->create();
         $supplier = Supplier::factory()->create();
         $product = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
+        $additionalProduct = Product::factory()->create([
             'product_type' => 'CONSUMABLE',
             'supplier_id' => $supplier->id,
         ]);
@@ -376,7 +380,7 @@ class PurchasingInboundApiTest extends TestCase
             'supplier_id' => $supplier->id,
             'lines' => [[
                 'product_id' => $product->id,
-                'ordered_qty' => 2,
+                'ordered_qty' => 3,
                 'unit_price' => 10,
             ]],
         ])->assertCreated();
@@ -392,7 +396,7 @@ class PurchasingInboundApiTest extends TestCase
             'supplier_id' => $supplier->id,
             'lines' => [[
                 'purchase_order_line_id' => $purchaseOrderLineId,
-                'received_qty' => 1,
+                'received_qty' => 2,
             ]],
         ])->assertCreated();
 
@@ -401,13 +405,19 @@ class PurchasingInboundApiTest extends TestCase
         $this->patchJson('/api/purchase-orders/'.$purchaseOrderId, [
             'po_date' => now()->addDay()->toDateString(),
             'supplier_id' => $supplier->id,
+            'remarks' => 'Delivery quantity revised after the first receipt.',
             'lines' => [[
+                'id' => $purchaseOrderLineId,
                 'product_id' => $product->id,
-                'ordered_qty' => 3,
+                'ordered_qty' => 4,
                 'unit_price' => 12,
+            ], [
+                'product_id' => $additionalProduct->id,
+                'ordered_qty' => 2,
+                'unit_price' => 6,
             ]],
-        ])->assertUnprocessable()
-            ->assertJsonValidationErrors(['status']);
+        ])->assertOk()
+            ->assertJsonCount(2, 'data.lines');
 
         $this->assertDatabaseHas('purchase_orders', [
             'id' => $purchaseOrderId,
@@ -415,12 +425,166 @@ class PurchasingInboundApiTest extends TestCase
         ]);
         $this->assertDatabaseHas('purchase_order_lines', [
             'id' => $purchaseOrderLineId,
-            'received_qty' => 1,
+            'ordered_qty' => 4,
+            'received_qty' => 2,
+            'unit_price' => 12,
         ]);
         $this->assertDatabaseHas('stock_in_lines', [
             'id' => $stockInLineId,
             'purchase_order_line_id' => $purchaseOrderLineId,
         ]);
+        $this->assertDatabaseHas('purchase_order_lines', [
+            'purchase_order_id' => $purchaseOrderId,
+            'product_id' => $additionalProduct->id,
+            'ordered_qty' => 2,
+            'received_qty' => 0,
+            'unit_price' => 6,
+        ]);
+    }
+
+    public function test_partial_purchase_order_auto_completes_when_an_edit_matches_received_quantity(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $purchaseOrder = $this->postJson('/api/purchase-orders', [
+            'po_number' => 'PO-PARTIAL-EDIT-COMPLETE-001',
+            'po_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 3,
+                'unit_price' => 10,
+            ]],
+        ])->assertCreated();
+
+        $purchaseOrderId = (int) $purchaseOrder->json('data.id');
+        $purchaseOrderLineId = (int) $purchaseOrder->json('data.lines.0.id');
+        $this->patchJson('/api/purchase-orders/'.$purchaseOrderId.'/issue')->assertOk();
+
+        $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-PARTIAL-EDIT-COMPLETE-001',
+            'stock_in_date' => now()->toDateString(),
+            'purchase_order_id' => $purchaseOrderId,
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'purchase_order_line_id' => $purchaseOrderLineId,
+                'received_qty' => 2,
+            ]],
+        ])->assertCreated();
+
+        $this->patchJson('/api/purchase-orders/'.$purchaseOrderId, [
+            'po_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'id' => $purchaseOrderLineId,
+                'product_id' => $product->id,
+                'ordered_qty' => 2,
+                'unit_price' => 10,
+            ]],
+        ])->assertOk()
+            ->assertJsonPath('data.status', 'COMPLETED')
+            ->assertJsonPath('data.lines.0.received_qty', 2)
+            ->assertJsonPath('data.lines.0.ordered_qty', 2);
+
+        $this->assertDatabaseHas('purchase_orders', [
+            'id' => $purchaseOrderId,
+            'status' => 'COMPLETED',
+        ]);
+    }
+
+    public function test_partial_purchase_order_rejects_changes_that_would_affect_received_lines(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $otherSupplier = Supplier::factory()->create();
+        $product = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
+        $replacementProduct = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $purchaseOrder = $this->postJson('/api/purchase-orders', [
+            'po_number' => 'PO-PARTIAL-SAFE-GUARDS-001',
+            'po_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 3,
+                'unit_price' => 10,
+            ]],
+        ])->assertCreated();
+
+        $purchaseOrderId = (int) $purchaseOrder->json('data.id');
+        $purchaseOrderLineId = (int) $purchaseOrder->json('data.lines.0.id');
+        $this->patchJson('/api/purchase-orders/'.$purchaseOrderId.'/issue')->assertOk();
+
+        $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-PARTIAL-SAFE-GUARDS-001',
+            'stock_in_date' => now()->toDateString(),
+            'purchase_order_id' => $purchaseOrderId,
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'purchase_order_line_id' => $purchaseOrderLineId,
+                'received_qty' => 2,
+            ]],
+        ])->assertCreated();
+
+        $basePayload = [
+            'po_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'id' => $purchaseOrderLineId,
+                'product_id' => $product->id,
+                'ordered_qty' => 3,
+                'unit_price' => 10,
+            ]],
+        ];
+
+        $this->patchJson('/api/purchase-orders/'.$purchaseOrderId, [
+            ...$basePayload,
+            'supplier_id' => $otherSupplier->id,
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['supplier_id']);
+
+        $this->patchJson('/api/purchase-orders/'.$purchaseOrderId, [
+            ...$basePayload,
+            'lines' => [[
+                ...$basePayload['lines'][0],
+                'product_id' => $replacementProduct->id,
+            ]],
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['lines.0.product_id']);
+
+        $this->patchJson('/api/purchase-orders/'.$purchaseOrderId, [
+            ...$basePayload,
+            'lines' => [[
+                ...$basePayload['lines'][0],
+                'ordered_qty' => 1,
+            ]],
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['lines.0.ordered_qty']);
+
+        $this->patchJson('/api/purchase-orders/'.$purchaseOrderId, [
+            ...$basePayload,
+            'lines' => [[
+                'product_id' => $product->id,
+                'ordered_qty' => 1,
+                'unit_price' => 10,
+            ]],
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['lines']);
     }
 
     public function test_stock_in_tracks_partial_receive_then_auto_completes_po(): void
