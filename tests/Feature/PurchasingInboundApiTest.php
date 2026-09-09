@@ -499,6 +499,104 @@ class PurchasingInboundApiTest extends TestCase
         ]);
     }
 
+    public function test_restore_cancelled_purchase_order_for_correction_preserves_receipts(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $supplier = Supplier::factory()->create();
+        $productA = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
+        $productB = Product::factory()->create([
+            'product_type' => 'CONSUMABLE',
+            'supplier_id' => $supplier->id,
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $purchaseOrder = $this->postJson('/api/purchase-orders', [
+            'po_number' => 'PO-RESTORE-CANCELLED-001',
+            'po_date' => now()->toDateString(),
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'product_id' => $productA->id,
+                'ordered_qty' => 2,
+                'unit_price' => 10,
+            ], [
+                'product_id' => $productB->id,
+                'ordered_qty' => 3,
+                'unit_price' => 20,
+            ]],
+        ])->assertCreated();
+
+        $purchaseOrderId = (int) $purchaseOrder->json('data.id');
+        $productALineId = (int) $purchaseOrder->json('data.lines.0.id');
+        $productBLineId = (int) $purchaseOrder->json('data.lines.1.id');
+        $this->patchJson('/api/purchase-orders/'.$purchaseOrderId.'/issue')->assertOk();
+
+        $stockIn = $this->postJson('/api/stock-ins', [
+            'stock_in_number' => 'SIN-RESTORE-CANCELLED-001',
+            'stock_in_date' => now()->toDateString(),
+            'purchase_order_id' => $purchaseOrderId,
+            'supplier_id' => $supplier->id,
+            'lines' => [[
+                'purchase_order_line_id' => $productALineId,
+                'received_qty' => 2,
+            ], [
+                'purchase_order_line_id' => $productBLineId,
+                'received_qty' => 2,
+            ]],
+        ])->assertCreated();
+
+        $stockInLineIds = collect($stockIn->json('data.lines'))->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all();
+
+        $this->patchJson('/api/purchase-orders/'.$purchaseOrderId.'/cancel')->assertOk();
+        $this->assertDatabaseHas('purchase_orders', [
+            'id' => $purchaseOrderId,
+            'status' => 'CANCELLED',
+        ]);
+
+        $this->artisan('purchase-orders:restore-cancelled-for-correction', [
+            'purchase_order_id' => $purchaseOrderId,
+            '--dry-run' => true,
+        ])->assertExitCode(0);
+        $this->assertDatabaseHas('purchase_orders', [
+            'id' => $purchaseOrderId,
+            'status' => 'CANCELLED',
+        ]);
+
+        $this->artisan('purchase-orders:restore-cancelled-for-correction', [
+            'purchase_order_id' => $purchaseOrderId,
+            '--performed-by' => $admin->id,
+            '--yes' => true,
+        ])->assertExitCode(0);
+
+        $this->assertDatabaseHas('purchase_orders', [
+            'id' => $purchaseOrderId,
+            'status' => 'PARTIAL',
+        ]);
+        $this->assertDatabaseHas('purchase_order_lines', [
+            'id' => $productALineId,
+            'ordered_qty' => 2,
+            'received_qty' => 2,
+        ]);
+        $this->assertDatabaseHas('purchase_order_lines', [
+            'id' => $productBLineId,
+            'ordered_qty' => 3,
+            'received_qty' => 2,
+        ]);
+        $this->assertSame(2, StockInLine::query()
+            ->whereIn('id', $stockInLineIds)
+            ->whereIn('purchase_order_line_id', [$productALineId, $productBLineId])
+            ->count());
+        $this->assertDatabaseHas('audit_logs', [
+            'entity_name' => 'PurchaseOrder',
+            'entity_id' => $purchaseOrderId,
+            'action' => 'UPDATE',
+            'user_id' => $admin->id,
+        ]);
+    }
+
     public function test_partial_purchase_order_rejects_changes_that_would_affect_received_lines(): void
     {
         $admin = User::factory()->admin()->create();
