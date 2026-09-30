@@ -11,6 +11,7 @@ use App\Application\Support\UserNotificationService;
 use App\Application\ReportingAudit\Reports\Services\ExportService;
 use App\Domain\InventoryCore\Enums\MovementType;
 use App\Domain\InventoryCore\Enums\StockItemQcStatus;
+use App\Domain\InventoryCore\Enums\StockItemStatus;
 use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\PurchasingInbound\StockIn\ExportQcDocumentRequest;
@@ -288,10 +289,14 @@ class QcDocumentController extends Controller
                     $hasChanges = true;
                 }
 
+                $fromStatus = $stockItem->current_status;
+
                 $stockItem->qc_status = $result;
                 if ($result === StockItemQcStatus::Passed) {
+                    $stockItem->current_status = StockItemStatus::InStock;
                     $stockItem->is_available = true;
                 } else {
+                    $stockItem->current_status = StockItemStatus::Received;
                     $stockItem->is_available = false;
                 }
 
@@ -310,7 +315,7 @@ class QcDocumentController extends Controller
                     'reference_id'      => (int) $check->id,
                     'qty_in'            => 0,
                     'qty_out'           => 0,
-                    'from_status'       => $stockItem->current_status->value,
+                    'from_status'       => $fromStatus->value,
                     'to_status'         => $stockItem->current_status->value,
                     'performed_by'      => $performedBy,
                     'remarks'           => $lineRemarks,

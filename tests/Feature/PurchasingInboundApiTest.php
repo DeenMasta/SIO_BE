@@ -1442,6 +1442,19 @@ class PurchasingInboundApiTest extends TestCase
             ]],
         ])->assertOk();
 
+        $this->assertDatabaseHas('stock_items', [
+            'id' => $stockItemId,
+            'qc_status' => 'PASSED',
+            'current_status' => 'IN_STOCK',
+            'is_available' => true,
+        ]);
+        $this->assertDatabaseHas('stock_movements', [
+            'stock_item_id' => $stockItemId,
+            'movement_type' => 'QC_PASS',
+            'from_status' => 'RECEIVED',
+            'to_status' => 'IN_STOCK',
+        ]);
+
         $this->assertContains(
             'qc-document.updated',
             $staff->fresh()->notifications()->get()->pluck('data.event_type')->all(),
