@@ -10,13 +10,37 @@ use Illuminate\Support\Facades\DB;
 
 class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
 {
-    public function paginate(int $perPage = 15): LengthAwarePaginator
+    public function paginate(int $perPage = 15, array $filters = []): LengthAwarePaginator
     {
-        return PurchaseOrder::query()
+        $query = PurchaseOrder::query()
             ->with('lines.product')
             ->orderByDesc('po_date')
-            ->orderByDesc('po_number')
-            ->paginate($perPage);
+            ->orderByDesc('po_number');
+
+        $search = trim((string) ($filters['q'] ?? ''));
+        if ($search !== '') {
+            $query->where(function ($searchQuery) use ($search): void {
+                $searchQuery->where('po_number', 'like', '%'.$search.'%')
+                    ->orWhereHas('supplier', function ($supplierQuery) use ($search): void {
+                        $supplierQuery->where('supplier_name', 'like', '%'.$search.'%')
+                            ->orWhere('supplier_code', 'like', '%'.$search.'%');
+                    });
+            });
+        }
+
+        if (! empty($filters['date_from'])) {
+            $query->whereDate('po_date', '>=', (string) $filters['date_from']);
+        }
+
+        if (! empty($filters['date_to'])) {
+            $query->whereDate('po_date', '<=', (string) $filters['date_to']);
+        }
+
+        if (! empty($filters['status'])) {
+            $query->where('status', (string) $filters['status']);
+        }
+
+        return $query->paginate($perPage);
     }
 
     public function findOrFail(int $id): PurchaseOrder

@@ -7,7 +7,8 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 
 interface PurchaseOrderRepository
 {
-    public function paginate(int $perPage = 15): LengthAwarePaginator;
+    /** @param array<string, mixed> $filters */
+    public function paginate(int $perPage = 15, array $filters = []): LengthAwarePaginator;
 
     public function findOrFail(int $id): PurchaseOrder;
 

@@ -15,6 +15,7 @@ use App\Domain\PurchasingInbound\Enums\PurchaseOrderStatus;
 use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\PurchasingInbound\PurchaseOrder\ExportPurchaseOrderRequest;
+use App\Http\Requests\Api\PurchasingInbound\PurchaseOrder\ListPurchaseOrderRequest;
 use App\Http\Requests\Api\PurchasingInbound\PurchaseOrder\StorePurchaseOrderRequest;
 use App\Http\Requests\Api\PurchasingInbound\PurchaseOrder\UpdatePurchaseOrderRequest;
 use App\Http\Resources\Api\PurchasingInbound\PurchaseOrderResource;
@@ -38,13 +39,11 @@ class PurchaseOrderController extends Controller
         private readonly UserNotificationService $userNotificationService,
     ) {}
 
-    public function index(Request $request): JsonResponse
+    public function index(ListPurchaseOrderRequest $request): JsonResponse
     {
         $this->authorize('viewAny', PurchaseOrder::class);
 
-        $purchaseOrders = $this->listPurchaseOrders->execute([
-            'per_page' => (int) $request->integer('per_page', 15),
-        ]);
+        $purchaseOrders = $this->listPurchaseOrders->execute($request->validated());
 
         return ApiResponse::success(
             PurchaseOrderResource::collection($purchaseOrders->items()),
