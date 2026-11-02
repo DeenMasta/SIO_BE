@@ -256,6 +256,34 @@ class QcOutboundApiTest extends TestCase
         $this->assertDatabaseCount('stock_items', 0);
     }
 
+    public function test_non_serialized_stock_out_reports_when_no_stock_is_available(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create([
+            'product_code' => 'BST-OUT-EMPTY',
+            'product_type' => 'ACCESSORY',
+            'requires_serial_number' => false,
+        ]);
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->postJson('/api/stock-outs', [
+            'stock_out_number' => 'SOUT-BST-EMPTY',
+            'idempotency_key' => 'idem-bst-empty',
+            'stock_out_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'lines' => [[
+                'product_id' => $product->id,
+                'qty' => 1,
+            ]],
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.lines.0', 'No stock available for product BST-OUT-EMPTY.');
+
+        $this->assertDatabaseCount('stock_out', 0);
+    }
+
     public function test_stock_out_export_returns_filtered_csv(): void
     {
         $admin = User::factory()->admin()->create();

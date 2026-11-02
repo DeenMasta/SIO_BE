@@ -327,7 +327,9 @@ class PostStockOutUseCase implements UseCase
                 );
                 if ($availableQty < $qty) {
                     throw ValidationException::withMessages([
-                        'lines' => [sprintf('Insufficient stock for product %s. Available: %d, requested: %d.', $product->product_code, $availableQty, $qty)],
+                        'lines' => [$availableQty === 0
+                            ? sprintf('No stock available for product %s.', $product->product_code)
+                            : sprintf('Insufficient stock for product %s. Available: %d, requested: %d.', $product->product_code, $availableQty, $qty)],
                     ]);
                 }
 
