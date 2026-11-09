@@ -169,6 +169,65 @@ class QcOutboundApiTest extends TestCase
         ])->assertUnprocessable();
     }
 
+    public function test_admin_can_reverse_posted_stock_out_item_back_to_inventory(): void
+    {
+        $admin = User::factory()->admin()->create();
+        [, $device, $stockItemId, $stockInId, $stockInLineId] = $this->createReceivedDeviceItem($admin);
+        $customer = Customer::factory()->create();
+
+        Sanctum::actingAs($admin, ['admin-access']);
+
+        $this->postJson('/api/qc-transactions', [
+            'qc_reference_number' => 'QC-REVERSE-100001',
+            'stock_in_id' => $stockInId,
+            'qc_date' => now()->toDateString(),
+            'lines' => [[
+                'stock_in_line_id' => $stockInLineId,
+                'product_id' => $device->id,
+                'qc_result' => 'PASS',
+                'stock_item_ids' => [$stockItemId],
+            ]],
+        ])->assertCreated();
+
+        $stockOut = $this->postJson('/api/stock-outs', [
+            'stock_out_number' => 'SOUT-REVERSE-100001',
+            'idempotency_key' => 'idem-reverse-100001',
+            'stock_out_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'lines' => [[
+                'product_id' => $device->id,
+                'qty' => 1,
+                'stock_item_ids' => [$stockItemId],
+            ]],
+        ])->assertCreated();
+
+        $stockOutId = (int) $stockOut->json('data.id');
+        $stockOutLineId = (int) $stockOut->json('data.lines.0.id');
+
+        $this->postJson("/api/stock-outs/{$stockOutId}/reverse", [
+            'remarks' => 'Wrong item dispatched.',
+            'lines' => [[
+                'stock_out_line_id' => $stockOutLineId,
+                'stock_item_ids' => [$stockItemId],
+            ]],
+        ])->assertOk()->assertJsonPath('data.status', 'CANCELLED');
+
+        $this->assertDatabaseHas('stock_items', [
+            'id' => $stockItemId,
+            'current_status' => 'IN_STOCK',
+            'is_available' => 1,
+        ]);
+        $this->assertDatabaseHas('stock_out_lines', [
+            'id' => $stockOutLineId,
+            'reversed_qty' => 1,
+        ]);
+        $this->assertDatabaseHas('stock_movements', [
+            'stock_item_id' => $stockItemId,
+            'movement_type' => 'STOCK_OUT_REVERSAL',
+            'qty_in' => 1,
+        ]);
+    }
+
     public function test_staff_can_post_qc_and_stock_out(): void
     {
         $admin = User::factory()->admin()->create();

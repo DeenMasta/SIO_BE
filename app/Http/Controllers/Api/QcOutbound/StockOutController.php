@@ -6,6 +6,7 @@ use App\Application\Contracts\Repositories\StockOutRepository;
 use App\Application\QcOutbound\StockOut\UseCases\ListStockOutsUseCase;
 use App\Application\QcOutbound\StockOut\UseCases\PostStockOutUseCase;
 use App\Application\QcOutbound\StockOut\UseCases\ReverseStockOutExtrasUseCase;
+use App\Application\QcOutbound\StockOut\UseCases\ReverseStockOutUseCase;
 use App\Application\QcOutbound\StockOut\UseCases\SettleStockOutExtrasUseCase;
 use App\Application\Support\ApiResponse;
 use App\Application\Support\AuditLogger;
@@ -14,6 +15,7 @@ use App\Domain\ReportingAudit\Enums\AuditAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\QcOutbound\StockOut\ExportStockOutRequest;
 use App\Http\Requests\Api\QcOutbound\StockOut\ReverseStockOutExtrasRequest;
+use App\Http\Requests\Api\QcOutbound\StockOut\ReverseStockOutRequest;
 use App\Http\Requests\Api\QcOutbound\StockOut\SettleStockOutExtrasRequest;
 use App\Http\Requests\Api\QcOutbound\StockOut\StockOutSerialOptionsRequest;
 use App\Http\Requests\Api\QcOutbound\StockOut\StoreStockOutRequest;
@@ -35,6 +37,7 @@ class StockOutController extends Controller
         private readonly PostStockOutUseCase $postStockOut,
         private readonly SettleStockOutExtrasUseCase $settleStockOutExtras,
         private readonly ReverseStockOutExtrasUseCase $reverseStockOutExtras,
+        private readonly ReverseStockOutUseCase $reverseStockOut,
         private readonly StockOutRepository $stockOuts,
         private readonly AuditLogger $auditLogger,
         private readonly ExportService $exportService,
@@ -120,6 +123,16 @@ class StockOutController extends Controller
             new StockOutResource($updated),
             'Stock out extra items reversed back to stock successfully.',
         );
+    }
+
+    public function reverse(ReverseStockOutRequest $request, int $id): JsonResponse
+    {
+        $stockOut = $this->stockOuts->findOrFail($id);
+        $this->authorize('create', StockOut::class);
+
+        $updated = $this->reverseStockOut->execute($stockOut, $request->validated(), (int) $request->user()->id);
+
+        return ApiResponse::success(new StockOutResource($updated), 'Stock out item(s) reversed back to stock successfully.');
     }
 
     public function export(ExportStockOutRequest $request): StreamedResponse
