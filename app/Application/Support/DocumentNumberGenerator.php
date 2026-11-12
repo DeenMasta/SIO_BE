@@ -12,6 +12,7 @@ use App\Models\StockOut;
 use App\Models\Stocktake;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class DocumentNumberGenerator
 {
@@ -84,24 +85,38 @@ class DocumentNumberGenerator
      */
     private function generateNext(string $modelClass, string $column, string $prefix): string
     {
-        $latest = $modelClass::query()
-            ->where($column, 'like', $prefix.'-%')
-            ->orderByDesc($column)
-            ->value($column);
+        return DB::transaction(function () use ($modelClass, $column, $prefix): string {
+            $sequenceKey = $modelClass.'|'.$column.'|'.$prefix;
+            $created = DB::table('document_number_sequences')->insertOrIgnore([
+                'sequence_key' => $sequenceKey,
+                'last_number' => 0,
+            ]);
 
-        $next = 1;
-        if (is_string($latest) && preg_match('/^(.*)-(\d{4})$/', $latest, $matches) === 1) {
-            $next = ((int) $matches[2]) + 1;
-        }
+            $sequence = DB::table('document_number_sequences')
+                ->where('sequence_key', $sequenceKey)
+                ->lockForUpdate()
+                ->first();
 
-        for ($attempt = 0; $attempt < 50; $attempt++) {
-            $candidate = $prefix.'-'.str_pad((string) ($next + $attempt), 4, '0', STR_PAD_LEFT);
-
-            if (! $modelClass::query()->where($column, $candidate)->exists()) {
-                return $candidate;
+            if ($sequence === null) {
+                throw new \RuntimeException('Unable to allocate a document number.');
             }
-        }
 
-        throw new \RuntimeException('Unable to generate unique document number.');
+            $lastNumber = (int) $sequence->last_number;
+            if ($created === 1) {
+                $pattern = '/^'.preg_quote($prefix, '/').'-([0-9]+)$/';
+                foreach ($modelClass::query()->where($column, 'like', $prefix.'-%')->pluck($column) as $number) {
+                    if (preg_match($pattern, (string) $number, $matches) === 1) {
+                        $lastNumber = max($lastNumber, (int) $matches[1]);
+                    }
+                }
+            }
+
+            $nextNumber = $lastNumber + 1;
+            DB::table('document_number_sequences')
+                ->where('sequence_key', $sequenceKey)
+                ->update(['last_number' => $nextNumber]);
+
+            return $prefix.'-'.str_pad((string) $nextNumber, 4, '0', STR_PAD_LEFT);
+        });
     }
 }
